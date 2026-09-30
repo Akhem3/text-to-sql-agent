@@ -20,7 +20,9 @@ dependencies = [
     "sentence-transformers (>=6.1.0,<7.0.0)",
     "streamlit (>=1.64.0,<2.0.0)",
     "faker (>=40.40.0,<41.0.0)",
-    "langchain-huggingface (>=1.2.2,<2.0.0)"
+    "langchain-huggingface (>=1.2.2,<2.0.0)",
+    "sentencepiece (>=0.2.2,<0.3.0)",
+    "tiktoken (>=0.14.0,<0.15.0)"
 ]
 
 
