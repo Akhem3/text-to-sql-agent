@@ -5,11 +5,10 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 import torch
+from database_setup import db
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from transformers import AutoModelForCausalLM, AutoTokenizer, TextStreamer
-
-from database_setup import db
 
 # ---------------------------------------------------------------------------
 # 1. Modèle
@@ -103,7 +102,7 @@ def validate_readonly(sql: str) -> None:
 # ---------------------------------------------------------------------------
 PROMPT_INITIAL = ChatPromptTemplate.from_messages([
     ("system",
-     "Tu es un expert SQL de niveau Senior. Génère uniquement une requête SQL valide, "
+     "Tu es un expert SQL de niveau Senior. Génère uniquement une requête SQL valide, "  # noqa: ISC004
      "sans explication ni Markdown.\n"
      "Schéma de la base de données :\n{table_info}\n\n"
      "RÈGLE D'OR : pour les questions de type « Top N par catégorie », utilise des "
@@ -118,7 +117,7 @@ PROMPT_INITIAL = ChatPromptTemplate.from_messages([
 
 PROMPT_CORRECTION = ChatPromptTemplate.from_messages([
     ("system",
-     "Tu es un expert SQL. Ta requête précédente a échoué. Analyse le problème et "
+     "Tu es un expert SQL. Ta requête précédente a échoué. Analyse le problème et "  # noqa: ISC004
      "corrige la requête.\n"
      "RÈGLE CRITIQUE : si une colonne utilise la mauvaise table ou le mauvais alias "
      "(ex : T2 au lieu de T3), applique la correction dans TOUTES les clauses "
@@ -126,7 +125,7 @@ PROMPT_CORRECTION = ChatPromptTemplate.from_messages([
      "Ne génère que la requête SQL corrigée, sans explication.\n"
      "Schéma de la base de données :\n{table_info}"),
     ("human",
-     "Question initiale : {question}\n"
+     "Question initiale : {question}\n"  # noqa: ISC004
      "Requête erronée : {bad_query}\n"
      "Problème rencontré : {error_message}\n\n"
      "Requête SQL corrigée :"),
@@ -134,7 +133,7 @@ PROMPT_CORRECTION = ChatPromptTemplate.from_messages([
 
 PROMPT_SYNTHESE = ChatPromptTemplate.from_messages([
     ("system",
-     "Tu es un analyste de données expert. Formule une réponse claire et professionnelle, "
+     "Tu es un analyste de données expert. Formule une réponse claire et professionnelle, "  # noqa: ISC004
      "en phrases naturelles. Ne montre JAMAIS de code Python ni de tuples. "
      "Formate les montants en euros.\n"
      "Données brutes : {resultats_sql}"),
@@ -171,12 +170,12 @@ def run_sql_agent(question: str, max_iterations: int = MAX_ITERATIONS) -> AgentR
             validate_readonly(sql)
             rows = db.run(sql)
             # Une requête valide mais vide est suspecte : on laisse une chance de correction
-            if not rows or rows.strip() in ("", "[]"):
+            if not rows or rows.strip() in ("", "[]"):  # noqa: SIM102
                 if attempt < max_iterations:
                     raise ValueError("La requête s'exécute mais ne retourne aucune ligne.")
             print(f"✅ Succès :\n{rows}")
             return AgentResult(sql=sql, rows=str(rows), attempts=attempt)
-        except Exception as e:  # erreur SQL, requête refusée ou résultat vide
+        except Exception as e:  # erreur SQL, requête refusée ou résultat vide  # noqa: BLE001
             print(f"❌ {e}")
             if attempt == max_iterations:
                 print("⚠️ Nombre maximum de tentatives atteint.")
