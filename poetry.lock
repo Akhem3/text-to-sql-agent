@@ -1289,6 +1289,27 @@ test-full = ["adlfs", "aiohttp (!=4.0.0a0,!=4.0.0a1)", "backports-zstd ; python_
 tqdm = ["tqdm"]
 
 [[package]]
+name = "gguf"
+version = "0.19.0"
+description = "Read and write ML models in GGUF for GGML"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "gguf-0.19.0-py3-none-any.whl", hash = "sha256:70bcd10edfe697fb2dad6e40af2234b9d8ece9a41a99761405121ebda1c3c1cd"},
+    {file = "gguf-0.19.0.tar.gz", hash = "sha256:dbadcd6cc7ccd44256f2229fe7c2dff5e8aa5cf0612ab987fd2b1a57e428923f"},
+]
+
+[package.dependencies]
+numpy = ">=1.17"
+pyyaml = ">=5.1"
+requests = ">=2.25"
+tqdm = ">=4.27"
+
+[package.extras]
+gui = ["PySide6 (>=6.9,<7.0) ; python_version >= \"3.9\" and python_version < \"3.14\""]
+
+[[package]]
 name = "googleapis-common-protos"
 version = "1.75.5"
 description = "Common protobufs used in Google APIs"
@@ -7279,4 +7300,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<4.0.0"
-content-hash = "0f55cd2377106b6c332bbaab060f004376c6290439a2fd87be29e93296427f7e"
+content-hash = "87dba3fd19f2f21073dd47d411d2fc25b7469392df0c2f6ae20bec7dde4b3843"
