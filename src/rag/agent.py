@@ -140,7 +140,6 @@ def agent_sql_autonome(question, max_iterations=3):
             sql_query = sql_query.strip().replace("```sql", "").replace("```", "")
             iteration += 1
 
-# ... [Garder tout le code précédent intact jusqu'à la fin de 'def agent_sql_autonome(...)'] ...
 
 # 4. Le prompt de synthèse finale
 template_reponse = """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
