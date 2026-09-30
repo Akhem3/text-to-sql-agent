@@ -1,146 +1,202 @@
+"""Agent Text-to-SQL avec auto-correction (Llama 3.1 8B + LangChain LCEL)."""
+
+import re
+from dataclasses import dataclass
+from functools import lru_cache
+
 import torch
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableLambda, RunnablePassthrough
+from transformers import AutoModelForCausalLM, AutoTokenizer, TextStreamer
+
 from database_setup import db
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import PromptTemplate
-from langchain_core.runnables import RunnablePassthrough
-from langchain_huggingface import HuggingFacePipeline
-from transformers import AutoModelForCausalLM, AutoTokenizer, TextStreamer, pipeline
+
+# ---------------------------------------------------------------------------
+# 1. Modèle
+# ---------------------------------------------------------------------------
+MODEL_ID = "meta-llama/Llama-3.1-8B-Instruct"
+MAX_ITERATIONS = 3
 
 device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
 
-# 1. Chargement du modèle Llama 3.1
-model_id = "meta-llama/Llama-3.1-8B-Instruct"
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, clean_up_tokenization_spaces=False)
+model = AutoModelForCausalLM.from_pretrained(MODEL_ID, dtype=torch.bfloat16).to(device)
 
-tokenizer = AutoTokenizer.from_pretrained(
-    model_id,
-    clean_up_tokenization_spaces=False
-)
+# LangChain -> rôles attendus par le chat template de Llama
+ROLES = {"system": "system", "human": "user", "ai": "assistant"}
 
-model = AutoModelForCausalLM.from_pretrained(
-    model_id,
-    dtype=torch.bfloat16
-).to(device)
 
-streamer = TextStreamer(tokenizer, skip_prompt=True)
+def make_llm(max_new_tokens: int = 512, stream: bool = False) -> RunnableLambda:
+    """Runnable LangChain : ChatPromptValue -> texte généré.
 
-# 2. Création du pipeline compatible LangChain
-pipe = pipeline(
-    "text-generation",
-    model=model,
-    tokenizer=tokenizer,
-    device=device,
-    max_new_tokens=512,
-    max_length=None,
-    truncation=True, 
-    return_full_text=False,
-    streamer=streamer
-)
-llm = HuggingFacePipeline(pipeline=pipe)
+    Le chat template de Llama ajoute lui-même <|begin_of_text|> et les
+    en-têtes : plus de tokens spéciaux écrits à la main dans les prompts,
+    et un seul BOS (tokenisation faite une seule fois).
+    """
+    streamer = TextStreamer(tokenizer, skip_prompt=True) if stream else None
 
-# 3. Fonction partagée pour injecter le schéma à la volée
-def get_schema(_):
+    def _generate(prompt_value) -> str:
+        messages = [{"role": ROLES[m.type], "content": m.content} for m in prompt_value.to_messages()]
+        inputs = tokenizer.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            return_tensors="pt",
+            return_dict=True,
+        ).to(device)
+
+        with torch.inference_mode():
+            output = model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,  # SQL : sortie déterministe
+                temperature=None,
+                top_p=None,
+                streamer=streamer,
+                pad_token_id=tokenizer.eos_token_id,
+            )
+        new_tokens = output[0, inputs["input_ids"].shape[1]:]
+        return tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+
+    return RunnableLambda(_generate)
+
+
+llm_sql = make_llm(max_new_tokens=512)                   # silencieux
+llm_synthese = make_llm(max_new_tokens=512, stream=True)  # streamé uniquement ici
+
+# ---------------------------------------------------------------------------
+# 2. Schéma, extraction et garde-fou
+# ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=1)
+def get_schema() -> str:
     return db.get_table_info()
 
-# 4. Définition du Prompt Initial (avec la règle d'or pour le SQL complexe)
-template_initial = """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-Tu es un expert SQL de niveau Senior. Ta mission est de générer une requête SQL valide. Ne donne aucune explication.
-Schéma de la base de données :
-{table_info}
 
-RÈGLE D'OR : Pour les questions demandant un "Top N par catégorie" (ex: les meilleurs clients par région), tu DOIS utiliser des fonctions de fenêtrage avec PARTITION BY.
-Exemple :
-Question : Quels sont les 3 employés les mieux payés par département ?
-Requête : WITH Ranked AS (SELECT nom, departement, salaire, ROW_NUMBER() OVER(PARTITION BY departement ORDER BY salaire DESC) as rn FROM employes) SELECT nom, departement, salaire FROM Ranked WHERE rn <= 3;
-<|eot_id|><|start_header_id|>user<|end_header_id|>
-Question : {question}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"""
+FORBIDDEN = re.compile(
+    r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|ATTACH|PRAGMA|GRANT|REVOKE)\b",
+    re.IGNORECASE,
+)
 
-prompt_initial = PromptTemplate.from_template(template_initial)
 
-# 5. Prompt spécialisé pour la correction d'erreurs
-template_correction = """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-Tu es un expert SQL. Ta requête précédente a échoué. Analyse l'erreur de la base de données et corrige rigoureusement la requête.
-RÈGLE CRITIQUE : Si une colonne utilise la mauvaise table ou le mauvais alias (ex: T2 au lieu de T3), tu dois appliquer la correction dans TOUTES les clauses de la requête (SELECT, WHERE, GROUP BY, ORDER BY, etc...).
-Ne génère que la requête SQL corrigée finale, sans explication ni texte supplémentaire.
-Schéma de la base de données :
-{table_info}<|eot_id|><|start_header_id|>user<|end_header_id|>
-Question initiale : {question}
-Requête erronée générée : {bad_query}
-Erreur retournée : {error_message}
+def extract_sql(text: str) -> str:
+    """Isole la requête : bloc ```sql``` si présent, puis de SELECT/WITH à ';'."""
+    block = re.search(r"```(?:sql)?\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
+    if block:
+        text = block.group(1)
+    start = re.search(r"\b(SELECT|WITH)\b.*", text, re.DOTALL | re.IGNORECASE)
+    if start:
+        text = start.group(0)
+    return text.split(";")[0].strip() + ";"
 
-Génère la requête SQL corrigée :<|eot_id|><|start_header_id|>assistant<|end_header_id|>"""
 
-prompt_correction = PromptTemplate.from_template(template_correction)
+def validate_readonly(sql: str) -> None:
+    """Lève ValueError si la requête n'est pas un SELECT/WITH en lecture seule."""
+    if not re.match(r"\s*(SELECT|WITH)\b", sql, re.IGNORECASE):
+        raise ValueError("Seules les requêtes SELECT / WITH sont autorisées.")
+    if FORBIDDEN.search(sql):
+        raise ValueError("Mot-clé d'écriture ou d'administration interdit.")
 
-# 6. La boucle Agentic (Self-Correction)
-def agent_sql_autonome(question, max_iterations=3):
-    print(f"\n--- Lancement de l'Agent pour : '{question}' ---")
-    
-    # Étape A : Première tentative
-    chain_initiale = RunnablePassthrough.assign(table_info=get_schema) | prompt_initial | llm | StrOutputParser()
-    sql_query = chain_initiale.invoke({"question": question})
-    
-    # Nettoyage basique
-    sql_query = sql_query.strip().replace("```sql", "").replace("```", "")
-    
-    iteration = 1
-    
-    while iteration <= max_iterations:
-        print(f"\n[Tentative {iteration}] Requête testée : {sql_query}")
-        
+
+# ---------------------------------------------------------------------------
+# 3. Prompts (format chat, sans tokens spéciaux)
+# ---------------------------------------------------------------------------
+PROMPT_INITIAL = ChatPromptTemplate.from_messages([
+    ("system",
+     "Tu es un expert SQL de niveau Senior. Génère uniquement une requête SQL valide, "
+     "sans explication ni Markdown.\n"
+     "Schéma de la base de données :\n{table_info}\n\n"
+     "RÈGLE D'OR : pour les questions de type « Top N par catégorie », utilise des "
+     "fonctions de fenêtrage avec PARTITION BY.\n"
+     "Exemple :\n"
+     "Question : Quels sont les 3 employés les mieux payés par département ?\n"
+     "Requête : WITH Ranked AS (SELECT nom, departement, salaire, "
+     "ROW_NUMBER() OVER(PARTITION BY departement ORDER BY salaire DESC) AS rn "
+     "FROM employes) SELECT nom, departement, salaire FROM Ranked WHERE rn <= 3;"),
+    ("human", "Question : {question}"),
+])
+
+PROMPT_CORRECTION = ChatPromptTemplate.from_messages([
+    ("system",
+     "Tu es un expert SQL. Ta requête précédente a échoué. Analyse le problème et "
+     "corrige la requête.\n"
+     "RÈGLE CRITIQUE : si une colonne utilise la mauvaise table ou le mauvais alias "
+     "(ex : T2 au lieu de T3), applique la correction dans TOUTES les clauses "
+     "(SELECT, WHERE, GROUP BY, ORDER BY...).\n"
+     "Ne génère que la requête SQL corrigée, sans explication.\n"
+     "Schéma de la base de données :\n{table_info}"),
+    ("human",
+     "Question initiale : {question}\n"
+     "Requête erronée : {bad_query}\n"
+     "Problème rencontré : {error_message}\n\n"
+     "Requête SQL corrigée :"),
+])
+
+PROMPT_SYNTHESE = ChatPromptTemplate.from_messages([
+    ("system",
+     "Tu es un analyste de données expert. Formule une réponse claire et professionnelle, "
+     "en phrases naturelles. Ne montre JAMAIS de code Python ni de tuples. "
+     "Formate les montants en euros.\n"
+     "Données brutes : {resultats_sql}"),
+    ("human", "Question : {question}"),
+])
+
+# ---------------------------------------------------------------------------
+# 4. Chaînes LCEL (définies une seule fois)
+# ---------------------------------------------------------------------------
+inject_schema = RunnablePassthrough.assign(table_info=lambda _: get_schema())
+
+chain_initiale = inject_schema | PROMPT_INITIAL | llm_sql | extract_sql
+chain_correction = inject_schema | PROMPT_CORRECTION | llm_sql | extract_sql
+chain_synthese = PROMPT_SYNTHESE | llm_synthese
+
+
+# ---------------------------------------------------------------------------
+# 5. Agent avec auto-correction
+# ---------------------------------------------------------------------------
+@dataclass
+class AgentResult:
+    sql: str
+    rows: str
+    attempts: int
+
+
+def run_sql_agent(question: str, max_iterations: int = MAX_ITERATIONS) -> AgentResult | None:
+    print(f"\n--- Agent SQL : {question!r} ---")
+    sql = chain_initiale.invoke({"question": question})
+
+    for attempt in range(1, max_iterations + 1):
+        print(f"\n[Tentative {attempt}] {sql}")
         try:
-            result = db.run(sql_query)
-            print(f"\n✅ SUCCÈS ! Résultat de la base de données :\n{result}")
-            return result
-            
-        except Exception as e:
-            error_msg = str(e)
-            print(f"❌ ERREUR SQL interceptée : {error_msg}")
-            
-            if iteration == max_iterations:
-                print("\n⚠️ L'agent a atteint le nombre maximum de tentatives d'autocorrection.")
+            validate_readonly(sql)
+            rows = db.run(sql)
+            # Une requête valide mais vide est suspecte : on laisse une chance de correction
+            if not rows or rows.strip() in ("", "[]"):
+                if attempt < max_iterations:
+                    raise ValueError("La requête s'exécute mais ne retourne aucune ligne.")
+            print(f"✅ Succès :\n{rows}")
+            return AgentResult(sql=sql, rows=str(rows), attempts=attempt)
+        except Exception as e:  # erreur SQL, requête refusée ou résultat vide
+            print(f"❌ {e}")
+            if attempt == max_iterations:
+                print("⚠️ Nombre maximum de tentatives atteint.")
                 return None
-                
-            print("🔄 L'agent analyse l'erreur et génère une correction...")
-            
-            # Étape B : Appel de la chaîne de correction
-            chain_correction = RunnablePassthrough.assign(table_info=get_schema) | prompt_correction | llm | StrOutputParser()
-            
-            sql_query = chain_correction.invoke({
-                "question": question,
-                "bad_query": sql_query,
-                "error_message": error_msg
-            })
-            
-            sql_query = sql_query.strip().replace("```sql", "").replace("```", "")
-            iteration += 1
+            sql = chain_correction.invoke(
+                {"question": question, "bad_query": sql, "error_message": str(e)}
+            )
+    return None
 
-# 7. Le prompt de synthèse finale
-template_reponse = """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-Tu es un analyste de données expert. Formule une réponse claire et professionnelle. 
-Rédige des phrases naturelles et ne montre JAMAIS de code Python ou de parenthèses de tuples. Formate les montants en euros.
-Données brutes : {resultats_sql}<|eot_id|><|start_header_id|>user<|end_header_id|>
-Question : {question}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"""
 
-prompt_reponse = PromptTemplate.from_template(template_reponse)
-
-# 8. La chaîne LCEL de synthèse
-chain_reponse = prompt_reponse | llm | StrOutputParser()
-
+# ---------------------------------------------------------------------------
+# 6. Point d'entrée
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    question_utilisateur = "Quels sont les 3 clients avec les plus gros montants d'abonnements au sein de chaque région ?"
-    
-    resultats_bruts = agent_sql_autonome(question_utilisateur)
-    
-    if resultats_bruts:
-        print("\n📝 Rédaction de la synthèse en cours...")
-        
-        synthese = chain_reponse.invoke({
-            "resultats_sql": str(resultats_bruts),
-            "question": question_utilisateur
-        })
+    question = "Quels sont les 3 clients avec les plus gros montants d'abonnements au sein de chaque région ?"
 
-        synthese = synthese.replace("<|eot_id|>", "").strip()
-        
-        print(f"\n✨ RÉPONSE FINALE POUR L'UTILISATEUR :\n{synthese}")
+    result = run_sql_agent(question)
+    if result:
+        print("\n📝 Synthèse :\n")
+        chain_synthese.invoke({"resultats_sql": result.rows, "question": question})
+        print()
     else:
-        print("\n❌ Impossible de générer une réponse suite à l'échec de la requête SQL.")
+        print("\n❌ Impossible de répondre : la requête SQL a échoué.")
