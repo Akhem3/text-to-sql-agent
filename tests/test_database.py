@@ -1,7 +1,7 @@
 """Tests d'intégrité de la base SQLite utilisée par l'agent Text-to-SQL.
 
 Lancer depuis la racine du repo :
-    poetry run pytest tests -v
+    poetry run python -m pytest
 
 """
 import os

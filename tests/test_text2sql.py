@@ -1,3 +1,20 @@
+"""Tests unitaires des composants de l'agent Text-to-SQL.
+
+Vérifie le bon fonctionnement des utilitaires SQL, de la récupération du
+schéma SQLite, de l'exécution sécurisée des requêtes et de l'évaluation
+des résultats.
+
+Teste également la construction des prompts, la préparation des exemples
+pour le fine-tuning (SFT) et la sélection reproductible des exemples
+few-shot.
+
+Les tests utilisent une base SQLite temporaire et des faux modèles afin
+de ne pas dépendre d'un modèle réel ni de la base de données du projet.
+
+Lancer depuis la racine du repo :
+    poetry run python -m pytest
+"""
+
 import sqlite3
 
 import pytest
