@@ -23,8 +23,39 @@ FAMILLE_MAP = {
     "Top-N par groupe (CTE + ROW_NUMBER)": "Top-N par groupe",
 }
 
+#Correction de cas
 def clean_sql(sql: str) -> str:
     return sql.replace("\\n", "\n").replace("\\t", "\t").strip()
+
+SQL_OVERRIDES = {
+    "Quelles factures payées sont supérieures au montant moyen facturé pour leur forfait ?": """
+WITH moyenne_forfait AS (
+  SELECT a2.type_forfait, AVG(f2.montant_paye) AS moy
+  FROM factures f2
+  JOIN abonnements a2 ON f2.abonnement_id = a2.abonnement_id
+  GROUP BY a2.type_forfait
+)
+SELECT f.facture_id, a.type_forfait, f.montant_paye
+FROM factures f
+JOIN abonnements a ON f.abonnement_id = a.abonnement_id
+JOIN moyenne_forfait m ON m.type_forfait = a.type_forfait
+WHERE f.statut_paiement = 'Payée'
+  AND f.montant_paye > m.moy;""",
+    "les 5 factures payees les plus cheres parmi celles superieures a la moyenne mensuelle de leur mois demission": """
+WITH moyenne_mensuelle AS (
+  SELECT strftime('%Y-%m', date_facturation) AS mois, AVG(montant_paye) AS moy
+  FROM factures
+  WHERE statut_paiement = 'Payée'
+  GROUP BY mois
+)
+SELECT f1.facture_id, f1.montant_paye, f1.date_facturation
+FROM factures f1
+JOIN moyenne_mensuelle m ON m.mois = strftime('%Y-%m', f1.date_facturation)
+WHERE f1.statut_paiement = 'Payée'
+  AND f1.montant_paye > m.moy
+ORDER BY f1.montant_paye DESC
+LIMIT 5;""",
+}
 
 def read_jsonl_md(path: Path) -> list[dict]:
     """Lit un fichier .md contenant un objet JSON par ligne."""
@@ -132,7 +163,7 @@ def build() -> DatasetDict:
         
         # Nettoyage des SQL (\n littéraux) avant la conversion en Dataset
         for r in pool + test:
-            r["sql"] = clean_sql(r["sql"])
+            r["sql"] = SQL_OVERRIDES.get(r["question"], clean_sql(r["sql"]))
 
     # Conversion en Dataset Hugging Face
     full = Dataset.from_list(pool)
