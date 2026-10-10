@@ -23,6 +23,9 @@ FAMILLE_MAP = {
     "Top-N par groupe (CTE + ROW_NUMBER)": "Top-N par groupe",
 }
 
+def clean_sql(sql: str) -> str:
+    return sql.replace("\\n", "\n").replace("\\t", "\t").strip()
+
 def read_jsonl_md(path: Path) -> list[dict]:
     """Lit un fichier .md contenant un objet JSON par ligne."""
     rows = []
@@ -126,6 +129,10 @@ def build() -> DatasetDict:
             print(f"   - [{r['famille']}] {r['question'][:70]}")
         overlap_ids = {id(r) for r in overlap}
         pool = [r for r in pool if id(r) not in overlap_ids]
+        
+        # Nettoyage des SQL (\n littéraux) avant la conversion en Dataset
+        for r in pool + test:
+            r["sql"] = clean_sql(r["sql"])
 
     # Conversion en Dataset Hugging Face
     full = Dataset.from_list(pool)
