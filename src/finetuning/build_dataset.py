@@ -74,6 +74,7 @@ def read_jsonl_md(path: Path) -> list[dict]:
         try:
             row = json.loads(line)
             row["famille"] = FAMILLE_MAP.get(row["famille"], row["famille"])
+            row["sql"] = SQL_OVERRIDES.get(row["question"], clean_sql(row["sql"]))
             rows.append(row)
         except json.JSONDecodeError as e:
             raise ValueError(
@@ -160,10 +161,6 @@ def build() -> DatasetDict:
             print(f"   - [{r['famille']}] {r['question'][:70]}")
         overlap_ids = {id(r) for r in overlap}
         pool = [r for r in pool if id(r) not in overlap_ids]
-        
-        # Nettoyage des SQL (\n littéraux) avant la conversion en Dataset
-        for r in pool + test:
-            r["sql"] = SQL_OVERRIDES.get(r["question"], clean_sql(r["sql"]))
 
     # Conversion en Dataset Hugging Face
     full = Dataset.from_list(pool)
