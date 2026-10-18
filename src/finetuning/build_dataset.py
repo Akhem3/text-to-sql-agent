@@ -1,4 +1,6 @@
 import json
+import random
+from collections import defaultdict
 from pathlib import Path
 
 from datasets import Dataset, DatasetDict
@@ -26,6 +28,11 @@ FAMILLE_MAP = {
 #Correction de cas
 def clean_sql(sql: str) -> str:
     return sql.replace("\\n", "\n").replace("\\t", "\t").strip()
+
+
+def normaliser_sql(sql: str) -> str:
+    """Clé de comparaison : deux requêtes qui ne diffèrent que par la casse ou les blancs sont identiques."""
+    return " ".join(sql.lower().split())
 
 SQL_OVERRIDES = {
     "Quelles factures payées sont supérieures au montant moyen facturé pour leur forfait ?": """
@@ -82,6 +89,42 @@ def read_jsonl_md(path: Path) -> list[dict]:
             ) from e
 
     return rows
+
+
+def split_par_groupe(pool: list[dict], n_valid: int, seed: int) -> tuple[list[dict], list[dict]]:
+    """Split train/validation stratifié par famille, où les paraphrases restent ensemble.
+
+    Deux questions avec le même SQL normalisé forment un groupe, envoyé en entier d'un
+    seul côté : sinon le modèle récite en validation un SQL appris par cœur en train,
+    et le score est surestimé. La validation fait donc environ n_valid exemples, pas exactement.
+    """
+    rng = random.Random(seed)
+
+    # SQL normalisé -> paraphrases
+    groupes = defaultdict(list)
+    for r in pool:
+        groupes[normaliser_sql(r["sql"])].append(r)
+
+    # famille -> groupes (la famille d'un groupe est celle de sa première question)
+    par_famille = defaultdict(list)
+    for groupe in groupes.values():
+        par_famille[groupe[0]["famille"]].append(groupe)
+
+    train, validation = [], []
+    for famille in sorted(par_famille):  # ordre fixe : le résultat ne dépend que du seed
+        paquets = par_famille[famille]
+        rng.shuffle(paquets)
+        n_famille = sum(len(p) for p in paquets)
+        quota = round(n_valid * n_famille / len(pool))  # part de la famille dans la validation
+        compteur = 0 
+        for paquet in paquets:
+            if compteur < quota:
+                validation.extend(paquet)
+                compteur += len(paquet)
+            else:
+                train.extend(paquet)
+
+    return train, validation
 
 
 def build() -> DatasetDict:
@@ -147,12 +190,12 @@ def build() -> DatasetDict:
         )
     
     test_q = {r["question"].strip().lower() for r in test}
-    test_sql = {" ".join(r["sql"].lower().split()) for r in test}
+    test_sql = {normaliser_sql(r["sql"]) for r in test}
 
     overlap = [
         r for r in pool
         if r["question"].strip().lower() in test_q
-        or " ".join(r["sql"].lower().split()) in test_sql
+        or normaliser_sql(r["sql"]) in test_sql
     ]
     #Gestion des doublons dans le pool vs test
     if overlap:
@@ -162,37 +205,14 @@ def build() -> DatasetDict:
         overlap_ids = {id(r) for r in overlap}
         pool = [r for r in pool if id(r) not in overlap_ids]
 
+    train, validation = split_par_groupe(pool, N_VALID, SEED)
+
     # Conversion en Dataset Hugging Face
-    full = Dataset.from_list(pool)
-
-    # On garde le schéma d'origine (famille en string) pour le restaurer après
-    string_features = full.features.copy()
-
-    # Encodage temporaire en ClassLabel, uniquement pour la stratification
-    full = full.class_encode_column("famille")
-    names = full.features["famille"].names  # liste des vrais noms de famille
-
-    split = full.train_test_split(
-        test_size=N_VALID,
-        stratify_by_column="famille",
-        seed=SEED,
-    )
-
-    def decode_famille(ex):
-        return {"famille": names[ex["famille"]]}
-
-    # On retrouve le nom à partir de l'entier, et on remet le type string
-    train = split["train"].map(decode_famille, features=string_features)
-    validation = split["test"].map(decode_famille, features=string_features)
-
-    # Dataset test (déjà en chaînes de caractères)
-    test_dataset = Dataset.from_list(test)
-
     return DatasetDict(
         {
-            "train": train,
-            "validation": validation,
-            "test": test_dataset,
+            "train": Dataset.from_list(train),
+            "validation": Dataset.from_list(validation),
+            "test": Dataset.from_list(test),
         }
     )
 
