@@ -1,14 +1,14 @@
 {
-  "date": "2026-10-11T01:03:48",
+  "date": "2026-10-18T22:50:25",
   "backend": "hf",
   "model": "meta-llama/Llama-3.1-8B-Instruct",
   "adapter": null,
   "split": "validation",
-  "n_exemples": 10,
+  "n_exemples": 100,
   "shots": 0,
   "shots_questions": [],
   "seed": 42,
   "prompt_version": "v1",
-  "sql_valide": 0.9,
-  "execution_accuracy": 0.2
+  "sql_valide": 0.87,
+  "execution_accuracy": 0.11
 }
