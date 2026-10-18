@@ -8,6 +8,7 @@ Exemples (depuis la racine du repo) :
 
 import argparse
 import json
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -23,6 +24,21 @@ from .sql_utils import extract_sql
 
 def _normalize(rows):
     return [tuple(round(v, 4) if isinstance(v, float) else v for v in row) for row in rows]
+
+
+def ordre_impose(sql: str) -> bool:
+    """Vrai si la requête principale a un ORDER BY : seul cas où l'ordre des lignes est garanti.
+
+    Un ORDER BY dans OVER(...), une sous-requête ou une CTE ne fixe pas l'ordre du résultat.
+    On retire donc tout ce qui est entre parenthèses avant de chercher le mot-clé.
+    """
+    principal = sql.upper()
+    while True:
+        nouveau = re.sub(r"\([^()]*\)", "", principal)
+        if nouveau == principal:
+            break
+        principal = nouveau
+    return "ORDER BY" in principal
 
 
 def results_match(pred, gold, ordered: bool) -> bool:
@@ -57,7 +73,7 @@ def evaluate(backend, examples, schema: str, shots=(), db_path: Path = DB_PATH, 
             "pred_sql": pred_sql,
             "gold_sql": ex["sql"],
             "valide": pred is not None,
-            "correct": results_match(pred, gold, ordered="ORDER BY" in ex["sql"].upper()),
+            "correct": results_match(pred, gold, ordered=ordre_impose(ex["sql"])),
             "latence_s": round(latency, 2),
         })
     return pd.DataFrame(records)

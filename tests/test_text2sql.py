@@ -20,7 +20,7 @@ import sqlite3
 import pytest
 
 from src.text2sql.db import get_schema, run_sql
-from src.text2sql.evaluate import evaluate, results_match
+from src.text2sql.evaluate import evaluate, ordre_impose, results_match
 from src.text2sql.prompts import build_messages, pick_shots, to_sft_record
 from src.text2sql.sql_utils import extract_sql
 
@@ -85,6 +85,19 @@ def test_results_match():
     assert not results_match([(1,), (2,)], [(2,), (1,)], ordered=True)
     assert results_match([(1.00001,)], [(1.0,)], ordered=True)
     assert not results_match(None, [(1,)], ordered=False)
+
+
+@pytest.mark.parametrize("sql, attendu", [
+    ("SELECT region FROM clients;", False),
+    ("SELECT region FROM clients ORDER BY region;", True),
+    (("WITH r AS (SELECT region, ROW_NUMBER() OVER (PARTITION BY region ORDER BY client_id) AS rn "
+      "FROM clients) SELECT region FROM r WHERE rn = 1;"), False),
+    ("SELECT region FROM (SELECT region FROM clients ORDER BY region LIMIT 2);", False),
+    ("SELECT a FROM (SELECT b FROM (SELECT c) ORDER BY b);", False),
+    ("SELECT region FROM clients WHERE client_id IN (SELECT MAX(client_id) FROM clients) ORDER BY region;", True),
+])
+def test_ordre_impose(sql, attendu):
+    assert ordre_impose(sql) == attendu
 
 
 def test_build_messages_with_shots():
