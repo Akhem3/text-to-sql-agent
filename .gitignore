@@ -4,8 +4,13 @@ __pycache__/
 .ruff_cache/
 .pytest_cache/
 
-# Données et Modèles (Trop lourds pour Git)
-data/
+# Données
+data/*
+!data/raw/
+data/raw/*
+!data/raw/*.md
+
+# Modèles
 models/
 
 # Secrets
