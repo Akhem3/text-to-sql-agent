@@ -79,12 +79,40 @@ sqlite3.OperationalError: no such column: region
 
 **Tentative 2** : la colonne `region` appartient à la table `clients`, pas à `abonnements`. L'agent corrige en ajoutant la jointure nécessaire, et la requête s'exécute avec succès (voir la requête de l'exemple ci-dessus).
 
+## Évaluation
+
+Benchmark maison de questions métier en français, chacune associée à une requête SQL de référence : 491 exemples d'entraînement, 100 de validation et 100 de test, répartis en 12 familles (filtres, jointures, `GROUP BY` / `HAVING`, dates, top-N par groupe, ratios…). Le split test est réservé à l'évaluation finale.
+
+**Métriques**
+
+- **SQL valide** : la requête générée s'exécute sans erreur.
+- **Execution accuracy (EX)**, métrique principale : la requête générée renvoie le même résultat que la référence. Les colonnes sont comparées à permutation près (convention de l'évaluateur [Spider test-suite](https://github.com/taoyds/test-suite-sql-eval)), et l'ordre des lignes ne compte que si la référence a un `ORDER BY`.
+- **EX relâchée**, métrique secondaire : accepte aussi une requête qui renvoie la bonne réponse avec des colonnes en plus. Utile pour distinguer « mauvaise réponse » et « bonne réponse avec des colonnes en trop », mais gonflée par les `SELECT *` : elle ne sert pas à comparer deux prompts qui changent la façon de sélectionner les colonnes.
+
+**Résultats** (Llama 3.1 8B Instruct, 0-shot, validation)
+
+| Prompt | SQL valide | EX | EX relâchée |
+|---|---|---|---|
+| v1 : schéma seul | 87 % | 16 % | 34 % |
+| v2 : + valeurs des colonnes catégorielles + règles SQLite | 90 % | 19 % | 25 % |
+
+Chaque règle du prompt v2 vise une erreur observée sur la v1, et chacune a réduit son erreur cible : `SELECT *` passe de 27 à 10 requêtes, `EXTRACT` (absent de SQLite) et les valeurs mal casées (`'payée'` au lieu de `'Payée'`) disparaissent. Le gain d'EX (+3 points sur 100 questions) reste dans la marge de bruit. La baisse de l'EX relâchée s'explique par la disparition des `SELECT *` et par un modèle devenu trop minimaliste dans le choix des colonnes : c'est la cible de l'étape suivante, le few-shot.
+
+Lancer un benchmark :
+
+```bash
+poetry run python -m src.text2sql.evaluate --split validation --shots 0 --name mon_run
+```
+
+Les sorties brutes du modèle, les requêtes et les scores par question sont enregistrés dans `results/`, avec les versions du prompt et de la métrique.
+
 ## Avancement
 
 - [x] Agent LangChain/LCEL (Llama 3.1 8B)
 - [x] Injection dynamique du schéma
 - [x] Boucle d'auto-correction
-- [ ] Évaluation (précision d'exécution)
+- [x] Évaluation (execution accuracy, benchmark de 691 questions)
+- [ ] Prompt few-shot
 - [ ] Fine-tuning QLoRA
 - [ ] Serving vLLM et suivi des performances
 
