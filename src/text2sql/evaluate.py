@@ -22,7 +22,7 @@ from tqdm import tqdm
 
 from .config import DATASET_PATH, DB_PATH, DEFAULT_MODEL, RESULTS_DIR
 from .db import get_categorical_values, get_schema, run_sql
-from .prompts import PROMPT_VERSION, build_messages, build_schema_context, pick_shots
+from .prompts import PROMPT_VERSION, build_messages, build_schema_context, load_shots, pick_shots
 from .sql_utils import extract_sql
 
 # À incrémenter à chaque changement de results_match : des scores de versions différentes ne se comparent pas.
@@ -140,7 +140,10 @@ def main() -> None:
     parser.add_argument("--model", default=DEFAULT_MODEL, help="id Hugging Face ou chemin d'un .gguf")
     parser.add_argument("--adapter", default=None, help="adaptateur LoRA (backend hf uniquement)")
     parser.add_argument("--split", choices=["train", "validation", "test"], default="validation")
-    parser.add_argument("--shots", type=int, default=0, help="nombre d'exemples few-shot tirés du train")
+    # Exclusifs : un run doit avoir une seule origine de shots, sinon le meta devient ambigu.
+    source_shots = parser.add_mutually_exclusive_group()
+    source_shots.add_argument("--shots", type=int, default=0, help="nombre d'exemples few-shot tirés du train")
+    source_shots.add_argument("--shots-file", default=None, help="shots écrits à la main (JSON : liste de {question, sql})")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--limit", type=int, default=None, help="n'évaluer que les N premiers exemples")
     parser.add_argument("--name", default=None, help="nom du run (fichiers de résultats)")
@@ -152,13 +155,16 @@ def main() -> None:
 
     ds = load_from_disk(str(DATASET_PATH))
     schema = build_schema_context(get_schema(), get_categorical_values())
-    shots = pick_shots(ds["train"], args.shots, args.seed) if args.shots else []
+    if args.shots_file:
+        shots = load_shots(args.shots_file)
+    else:
+        shots = pick_shots(ds["train"], args.shots, args.seed) if args.shots else []
     backend = load_backend(args.backend, args.model, args.adapter)
 
     df = evaluate(backend, ds[args.split], schema, shots, limit=args.limit)
     summarize(df)
 
-    name = args.name or f"{args.backend}_{args.shots}shot_{args.split}"
+    name = args.name or f"{args.backend}_{len(shots)}shot_{args.split}"
     RESULTS_DIR.mkdir(exist_ok=True)
     df.to_json(RESULTS_DIR / f"{name}.jsonl", orient="records", lines=True, force_ascii=False)
     meta = {
@@ -168,9 +174,11 @@ def main() -> None:
         "adapter": args.adapter,
         "split": args.split,
         "n_exemples": len(df),
-        "shots": args.shots,
+        "shots": len(shots),
+        "shots_file": args.shots_file,
         "shots_questions": [s["question"] for s in shots],
-        "seed": args.seed,
+        # La graine ne sert qu'au tirage : avec --shots-file, l'enregistrer ferait croire qu'elle a joué.
+        "seed": None if args.shots_file else args.seed,
         "prompt_version": PROMPT_VERSION,
         "metric_version": METRIC_VERSION,
         "sql_valide": round(float(df["valide"].mean()), 4),
