@@ -87,6 +87,38 @@ def test_results_match():
     assert not results_match(None, [(1,)], ordered=False)
 
 
+GOLD_2COL = [("a", 1), ("b", 2)]
+
+
+@pytest.mark.parametrize("pred, gold, ordered, attendu_strict, attendu_relache", [
+    # Colonnes permutées : même réponse, autre ordre de SELECT.
+    ([(1, "a"), (2, "b")], GOLD_2COL, False, True, True),
+    ([(1, "a"), (2, "b")], GOLD_2COL, True, True, True),
+    ([(2, "b"), (1, "a")], GOLD_2COL, True, False, False),  # permutation OK mais lignes dans le mauvais ordre
+    # Mêmes valeurs par colonne mais lignes mal appariées : ne doit PAS passer.
+    ([(2, "a"), (1, "b")], GOLD_2COL, False, False, False),
+    # Colonnes en trop : refusées en strict, tolérées en relâché.
+    ([(10, "a", 1), (20, "b", 2)], GOLD_2COL, False, False, True),
+    # Colonne manquante : toujours faux.
+    ([("a",), ("b",)], GOLD_2COL, False, False, False),
+    # Colonnes en double : chaque colonne du gold doit avoir sa propre colonne dans la prédiction.
+    ([(1, 1)], [(1, 1)], False, True, True),
+    ([(1, 2)], [(1, 1)], False, False, False),
+    ([(1, 1, 2)], [(1, 2)], False, False, True),
+    # Arrondi des flottants conservé après permutation.
+    ([(1.00001, "x")], [("x", 1.0)], True, True, True),
+    # NULL SQL (None) mélangé à des nombres : le tri des colonnes ne doit pas planter (key=repr).
+    ([(None, "a"), (1, "b")], [("b", 1), ("a", None)], False, True, True),
+    # Nombre de lignes différent / résultats vides.
+    ([(1, "a")], GOLD_2COL, False, False, False),
+    ([], [], False, True, True),
+    ([], [(1,)], False, False, False),
+])
+def test_results_match_colonnes(pred, gold, ordered, attendu_strict, attendu_relache):
+    assert results_match(pred, gold, ordered) == attendu_strict
+    assert results_match(pred, gold, ordered, colonnes_en_trop=True) == attendu_relache
+
+
 @pytest.mark.parametrize("sql, attendu", [
     ("SELECT region FROM clients;", False),
     ("SELECT region FROM clients ORDER BY region;", True),
@@ -126,9 +158,19 @@ def test_evaluate_perfect_and_broken_backend(db_path):
     schema = get_schema(db_path)
     perfect = FakeBackend(["```sql\n" + ex["sql"] + "\n```" for ex in EXAMPLES])
     df = evaluate(perfect, EXAMPLES, schema, db_path=db_path)
-    assert df["correct"].all() and df["valide"].all()
+    assert df["correct"].all() and df["valide"].all() and df["correct_relache"].all()
 
     broken = FakeBackend(["SELECT n_importe_quoi FROM nulle_part;", "SELECT COUNT(*) FROM clients;"])
     df = evaluate(broken, EXAMPLES, schema, db_path=db_path)
     assert list(df["valide"]) == [False, True]
     assert list(df["correct"]) == [False, False]
+    assert list(df["correct_relache"]) == [False, False]
+
+    # Bonne réponse + une colonne en trop : fausse en strict, juste en relâché.
+    extra = FakeBackend([
+        "SELECT COUNT(*), 0 FROM clients;",
+        "SELECT region, COUNT(*) FROM clients GROUP BY region ORDER BY region;",
+    ])
+    df = evaluate(extra, EXAMPLES, schema, db_path=db_path)
+    assert list(df["correct"]) == [False, False]
+    assert list(df["correct_relache"]) == [True, True]
