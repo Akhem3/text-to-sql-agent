@@ -3,6 +3,9 @@
 Exemples (depuis la racine du repo) :
     python -m src.text2sql.evaluate --split validation --shots 0 --limit 10
     python -m src.text2sql.evaluate --split validation --shots 5
+    poetry run python -m src.text2sql.evaluate --split validation --shots 5 --seed 42 --name hf_5shot_s42_validation_prompt_v2
+    poetry run python -m src.text2sql.evaluate --split validation --shots 5 --seed 1  --name hf_5shot_s1_validation_prompt_v2
+    poetry run python -m src.text2sql.evaluate --split validation --shots 5 --seed 2  --name hf_5shot_s2_validation_prompt_v2
     python -m src.text2sql.evaluate --backend llamacpp --model models/llama-q4.gguf --split test
 """
 

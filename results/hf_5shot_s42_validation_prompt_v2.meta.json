@@ -1,0 +1,22 @@
+{
+  "date": "2026-10-28T03:34:12",
+  "backend": "hf",
+  "model": "meta-llama/Llama-3.1-8B-Instruct",
+  "adapter": null,
+  "split": "validation",
+  "n_exemples": 100,
+  "shots": 5,
+  "shots_questions": [
+    "Montant moyen d'une facture payée par segment d'entreprise",
+    "liste les clients inscrits en 2026 qui ont au moins 2 abonnements dont la moyenne des factures payees depasse 20",
+    "client du segment ETI qui sont pas en Corse",
+    "Quel est le taux de réussite des paiements pour chaque type de forfait ?",
+    "Quelles factures échouées ont un montant supérieur à la moyenne des factures en échec ?"
+  ],
+  "seed": 42,
+  "prompt_version": "v2",
+  "metric_version": "v2",
+  "sql_valide": 0.95,
+  "execution_accuracy": 0.33,
+  "execution_accuracy_relachee": 0.38
+}

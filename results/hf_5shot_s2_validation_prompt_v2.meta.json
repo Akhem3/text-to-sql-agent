@@ -1,0 +1,22 @@
+{
+  "date": "2026-10-28T04:17:30",
+  "backend": "hf",
+  "model": "meta-llama/Llama-3.1-8B-Instruct",
+  "adapter": null,
+  "split": "validation",
+  "n_exemples": 100,
+  "shots": 5,
+  "shots_questions": [
+    "boites de Corse avec des forfaits plus chers que la moyenne de Corse",
+    "Donne moi les 3 dernières factures enregistrées",
+    "Quelles factures ont échoué au second semestre 2026 ?",
+    "Quels clients ont cumulé plus de 500 euros de factures payées ?",
+    "client avec facture echouee en septembre 2026"
+  ],
+  "seed": 2,
+  "prompt_version": "v2",
+  "metric_version": "v2",
+  "sql_valide": 0.96,
+  "execution_accuracy": 0.41,
+  "execution_accuracy_relachee": 0.49
+}
