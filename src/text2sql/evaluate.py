@@ -11,6 +11,7 @@ import json
 import re
 import time
 from datetime import datetime
+from itertools import permutations
 from pathlib import Path
 
 import pandas as pd
@@ -20,6 +21,10 @@ from .config import DATASET_PATH, DB_PATH, DEFAULT_MODEL, RESULTS_DIR
 from .db import get_schema, run_sql
 from .prompts import PROMPT_VERSION, build_messages, pick_shots
 from .sql_utils import extract_sql
+
+# À incrémenter à chaque changement de results_match : des scores de versions différentes ne se comparent pas.
+# v1 : colonnes comparées dans l'ordre du SELECT. v2 : à permutation près + EX relâchée (colonnes en trop).
+METRIC_VERSION = "v2"
 
 
 def _normalize(rows):
@@ -41,14 +46,46 @@ def ordre_impose(sql: str) -> bool:
     return "ORDER BY" in principal
 
 
-def results_match(pred, gold, ordered: bool) -> bool:
-    """Compare deux résultats d'exécution. L'ordre ne compte que si le gold a un ORDER BY."""
-    if pred is None:
-        return False
-    pred, gold = _normalize(pred), _normalize(gold)
+def _lignes_egales(pred, gold, ordered: bool) -> bool:
     if ordered:
         return pred == gold
     return sorted(pred, key=repr) == sorted(gold, key=repr)
+
+
+def _valeurs_triees(rows, j):
+    return sorted((row[j] for row in rows), key=repr)
+
+
+def results_match(pred, gold, ordered: bool, colonnes_en_trop: bool = False) -> bool:
+    """Compare deux résultats d'exécution, à permutation des colonnes près (convention Spider test-suite).
+
+    L'ordre des lignes ne compte que si le gold a un ORDER BY. Avec `colonnes_en_trop`, la
+    prédiction peut sélectionner des colonnes supplémentaires (métrique « EX relâchée »).
+    """
+    if pred is None:
+        return False
+    pred, gold = _normalize(pred), _normalize(gold)
+    if not pred or not gold:
+        return pred == gold  # sans ligne, on ne connaît pas les colonnes : seul [] == [] passe
+    if len(pred) != len(gold):
+        return False
+    n, k = len(pred[0]), len(gold[0])
+    if n < k or (n > k and not colonnes_en_trop):
+        return False
+
+    pred_sorted = [_valeurs_triees(pred, j) for j in range(n)]
+    gold_sorted = [_valeurs_triees(gold, j) for j in range(k)]
+    
+    # Filtre rapide : deux colonnes associées doivent avoir les mêmes valeurs triées. Nécessaire mais
+    # pas suffisant, car trier chaque colonne séparément perd l'appariement des valeurs entre colonnes ;
+    # d'où la vérification complète sur les lignes pour les hypothèses qui passent le filtre.
+    for cols in permutations(range(n), k):
+        if any(pred_sorted[j] != gold_sorted[i] for i, j in enumerate(cols)):
+            continue
+        reordonne = [tuple(row[j] for j in cols) for row in pred]
+        if _lignes_egales(reordonne, gold, ordered):
+            return True
+    return False
 
 
 def evaluate(backend, examples, schema: str, shots=(), db_path: Path = DB_PATH, limit: int | None = None) -> pd.DataFrame:
@@ -64,6 +101,7 @@ def evaluate(backend, examples, schema: str, shots=(), db_path: Path = DB_PATH, 
         gold = run_sql(ex["sql"], db_path)
         if gold is None:
             raise ValueError(f"Gold SQL invalide, à corriger dans le dataset : {ex['question']!r}")
+        ordered = ordre_impose(ex["sql"])
 
         records.append({
             "question": ex["question"],
@@ -73,7 +111,8 @@ def evaluate(backend, examples, schema: str, shots=(), db_path: Path = DB_PATH, 
             "pred_sql": pred_sql,
             "gold_sql": ex["sql"],
             "valide": pred is not None,
-            "correct": results_match(pred, gold, ordered=ordre_impose(ex["sql"])),
+            "correct": results_match(pred, gold, ordered),
+            "correct_relache": results_match(pred, gold, ordered, colonnes_en_trop=True), # Métrique secondaire : tolère des colonnes en trop, pour mesurer l'écart dû au seul SELECT.
             "latence_s": round(latency, 2),
         })
     return pd.DataFrame(records)
@@ -82,11 +121,14 @@ def evaluate(backend, examples, schema: str, shots=(), db_path: Path = DB_PATH, 
 def summarize(df: pd.DataFrame) -> None:
     print(
         f"\nSQL valide : {df['valide'].mean():.1%} | Execution accuracy : {df['correct'].mean():.1%}"
-        f" | latence moyenne : {df['latence_s'].mean():.1f}s"
+        f" | EX relâchée : {df['correct_relache'].mean():.1%} | latence moyenne : {df['latence_s'].mean():.1f}s"
     )
     for col in ("famille", "difficulte"):
         print(f"\nPar {col} :")
-        print(df.groupby(col)["correct"].agg(["mean", "count"]).round(3).sort_values("mean").to_string())
+        par_groupe = df.groupby(col).agg(
+            ex=("correct", "mean"), ex_relachee=("correct_relache", "mean"), n=("correct", "size")
+        )
+        print(par_groupe.round(3).sort_values("ex").to_string())
 
 
 def main() -> None:
@@ -127,8 +169,10 @@ def main() -> None:
         "shots_questions": [s["question"] for s in shots],
         "seed": args.seed,
         "prompt_version": PROMPT_VERSION,
+        "metric_version": METRIC_VERSION,
         "sql_valide": round(float(df["valide"].mean()), 4),
         "execution_accuracy": round(float(df["correct"].mean()), 4),
+        "execution_accuracy_relachee": round(float(df["correct_relache"].mean()), 4),
     }
     (RESULTS_DIR / f"{name}.meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2))
     print(f"\nRésultats enregistrés dans {RESULTS_DIR / name}.jsonl")
