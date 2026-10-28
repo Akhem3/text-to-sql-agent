@@ -19,9 +19,9 @@ import sqlite3
 
 import pytest
 
-from src.text2sql.db import get_schema, run_sql
+from src.text2sql.db import get_categorical_values, get_schema, run_sql
 from src.text2sql.evaluate import evaluate, ordre_impose, results_match
-from src.text2sql.prompts import build_messages, pick_shots, to_sft_record
+from src.text2sql.prompts import build_messages, build_schema_context, pick_shots, to_sft_record
 from src.text2sql.sql_utils import extract_sql
 
 
@@ -66,6 +66,30 @@ def test_schema_excludes_internal_tables(db_path):
     schema = get_schema(db_path)
     assert "CREATE TABLE clients" in schema
     assert "sqlite_sequence" not in schema
+
+
+def test_get_categorical_values_seuil(db_path):
+    assert get_categorical_values(db_path) == {"clients.region": ["Bretagne", "Corse"]}
+    assert get_categorical_values(db_path, max_distinct=1) == {}  # 2 régions distinctes > 1
+
+
+def test_get_categorical_values_types_et_null(tmp_path):
+    path = tmp_path / "cat.db"
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE t (id INTEGER PRIMARY KEY, statut TEXT, actif BOOLEAN, nom TEXT, montant REAL);
+        INSERT INTO t (statut, actif, nom, montant) VALUES
+            ('Payée', 1, 'A', 1.0), ('En retard', 0, 'B', 2.0), ('Payée', 1, 'C', 3.0), (NULL, 1, 'D', 4.0);
+        """
+    )
+    conn.commit()
+    conn.close()
+    # id (INTEGER) et montant (REAL) : mauvais type ; nom : 4 valeurs > 2 ; NULL exclu de statut ; valeurs triées.
+    assert get_categorical_values(path, max_distinct=2) == {
+        "t.statut": ["En retard", "Payée"],
+        "t.actif": [0, 1],
+    }
 
 
 def test_run_sql_ok_error_and_readonly(db_path):
@@ -138,6 +162,21 @@ def test_build_messages_with_shots():
     assert [m["role"] for m in messages] == ["system", "user", "assistant", "user"]
     assert "CREATE TABLE t (a);" in messages[0]["content"]
     assert messages[-1]["content"] == "Question : Q2"
+
+
+def test_build_schema_context():
+    schema = "CREATE TABLE t (a);"
+    assert build_schema_context(schema, {}) == schema
+    context = build_schema_context(schema, {"t.statut": ["En retard", "Payée", "L'Oréal"], "t.actif": [0, 1]})
+    assert context.startswith(schema)
+    assert "-- t.statut : 'En retard', 'Payée', 'L''Oréal'" in context  # littéraux SQL, apostrophe échappée
+    assert "-- t.actif : 0, 1" in context
+
+
+def test_system_prompt_contient_les_regles():
+    system = build_messages("Q", "SCHEMA")[0]["content"]
+    assert "strftime" in system
+    assert "SELECT *" in system
 
 
 def test_sft_record_matches_inference_prompt():

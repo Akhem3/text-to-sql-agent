@@ -18,8 +18,8 @@ import pandas as pd
 from tqdm import tqdm
 
 from .config import DATASET_PATH, DB_PATH, DEFAULT_MODEL, RESULTS_DIR
-from .db import get_schema, run_sql
-from .prompts import PROMPT_VERSION, build_messages, pick_shots
+from .db import get_categorical_values, get_schema, run_sql
+from .prompts import PROMPT_VERSION, build_messages, build_schema_context, pick_shots
 from .sql_utils import extract_sql
 
 # À incrémenter à chaque changement de results_match : des scores de versions différentes ne se comparent pas.
@@ -148,7 +148,7 @@ def main() -> None:
     from .llm import load_backend
 
     ds = load_from_disk(str(DATASET_PATH))
-    schema = get_schema()
+    schema = build_schema_context(get_schema(), get_categorical_values())
     shots = pick_shots(ds["train"], args.shots, args.seed) if args.shots else []
     backend = load_backend(args.backend, args.model, args.adapter)
 

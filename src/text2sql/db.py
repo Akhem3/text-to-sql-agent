@@ -24,6 +24,34 @@ def get_schema(db_path: Path = DB_PATH) -> str:
         return "\n".join(row[0] for row in conn.execute(query))
 
 
+def get_categorical_values(db_path: Path = DB_PATH, max_distinct: int = 40) -> dict[str, list]:
+    """Valeurs distinctes des colonnes catégorielles : {"table.colonne": [valeurs triées]}.
+
+    Catégorielle = type TEXT ou BOOLEAN et au plus `max_distinct` valeurs distinctes (hors NULL).
+    Les valeurs sont triées pour que le prompt soit identique d'un run à l'autre.
+    """
+    tables_query = (
+        "SELECT name FROM sqlite_master "
+        "WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+    )
+    colonnes_query = "SELECT name FROM pragma_table_info(?) WHERE type IN ('TEXT', 'BOOLEAN')"
+    valeurs = {}
+    with closing(connect(db_path)) as conn:
+        tables = [row[0] for row in conn.execute(tables_query)]
+        for table in tables:
+            colonnes = [row[0] for row in conn.execute(colonnes_query, (table,))]
+            for col in colonnes:
+                # Identifiants (et non valeurs) : f-string obligatoire, entre guillemets doubles.
+                n = conn.execute(f'SELECT COUNT(DISTINCT "{col}") FROM "{table}"').fetchone()[0]
+                if n <= max_distinct:
+                    query = (
+                        f'SELECT DISTINCT "{col}" FROM "{table}" '
+                        f'WHERE "{col}" IS NOT NULL ORDER BY "{col}"'
+                    )
+                    valeurs[f"{table}.{col}"] = [row[0] for row in conn.execute(query)]
+    return valeurs
+
+
 def run_sql(sql: str, db_path: Path = DB_PATH, timeout_s: float = 10.0):
     """Exécute une requête.
 
