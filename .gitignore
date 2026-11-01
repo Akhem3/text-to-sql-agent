@@ -9,6 +9,8 @@ data/*
 !data/raw/
 data/raw/*
 !data/raw/*.md
+# Shots écrits à la main : ils définissent les ablations, à versionner avec les résultats.
+!data/shots/
 
 # Modèles
 models/

@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]  # racine du repo (ce fichier : src/text2sql/config.py)
 DB_PATH = ROOT / "data" / "raw" / "banque_entreprise.db"
 DATASET_PATH = ROOT / "data" / "processed" / "hf_dataset"
+SHOTS_DIR = ROOT / "data" / "shots"
 RESULTS_DIR = ROOT / "results"
 
 DEFAULT_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
