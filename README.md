@@ -98,10 +98,46 @@ Benchmark maison de questions métier en français, chacune associée à une req
 
 Chaque règle du prompt v2 vise une erreur observée sur la v1, et chacune a réduit son erreur cible : `SELECT *` passe de 27 à 10 requêtes, `EXTRACT` (absent de SQLite) et les valeurs mal casées (`'payée'` au lieu de `'Payée'`) disparaissent. Le gain d'EX (+3 points sur 100 questions) reste dans la marge de bruit. La baisse de l'EX relâchée s'explique par la disparition des `SELECT *` et par un modèle devenu trop minimaliste dans le choix des colonnes : c'est la cible de l'étape suivante, le few-shot.
 
+**Few-shot** (prompt v2, 5 exemples tirés du train, validation)
+
+Sur 3 graines, l'EX passe de 19 % en 0-shot à 33 %, 33 % et 41 %, soit **35,7 % ± 4,6** en moyenne. La graine 2 n'est pas retenue comme « la meilleure » : la choisir sur la validation serait du sur-ajustement, et son écart avec la graine 1 n'est pas significatif (+13/-5, p = 0,10).
+
+### Ablation : d'où vient l'écart entre les jeux d'exemples ?
+
+Une **ablation** consiste à ne faire varier qu'un élément d'un système, tout le reste étant fixe, pour isoler ce qu'il apporte. Ici, le jeu s2 (41 %) devance le jeu s1 (33 %), et ses exemples sélectionnent plus de colonnes (3,0 contre 2,0 en moyenne). Deux explications se confondent : les questions des exemples, ou le style de leurs colonnes.
+
+Le plan 2×2 les sépare. Chaque jeu garde ses 5 questions et le corps de ses requêtes, et seule la liste du `SELECT` change (exemples dans [`data/shots/`](data/shots/), contrôlés par `tests/test_shots.py`) :
+
+- **Minimal** : uniquement les colonnes nécessaires pour répondre à la question.
+- **Riche** : identifiant + libellé + mesure, parmi ce que permettent les tables de la requête.
+
+Les exemples, la métrique principale et les 4 comparaisons ont été figés avant de voir les scores. La prédiction était que le score suivrait le style et non les questions.
+
+| EX | Minimal | Riche | Effet du style |
+|---|---|---|---|
+| **Questions s1** | 24 % | 29 % | +9/-4, p = 0,53 |
+| **Questions s2** | 23 % | 41 % | **+21/-3, p = 0,001** |
+| **Effet des questions** | +2/-3, p = 1 | **+13/-1, p = 0,006** | |
+
+*+x/-y : questions gagnées et perdues par le second run de la paire. Test de [McNemar](https://en.wikipedia.org/wiki/McNemar%27s_test) exact, adapté à des runs évalués sur les mêmes questions, avec [correction de Holm](https://en.wikipedia.org/wiki/Holm%E2%80%93Bonferroni_method) sur les 4 comparaisons.*
+
+**La prédiction n'est pas confirmée.** Le style et les questions interagissent : en minimal, les deux jeux se valent, mais seul le style riche du jeu s2 progresse nettement. Sur le jeu s1, l'effet du style reste indéterminé, car 13 questions qui basculent ne suffisent pas à conclure.
+
+**Piste exploratoire**, choisie après avoir vu les scores et donc à tester sur d'autres données : une réponse ne peut être juste que si elle a autant de colonnes que la référence. Or, parmi ces réponses, le taux de réussite reste stable dans tous les runs, y compris en 0-shot (64 à 70 %). L'écart viendrait donc surtout du fait de tomber sur le bon nombre de colonnes : `s1_riche` et `s2_riche` renvoient en moyenne 2,4 colonnes, mais le premier a le bon nombre sur 45 questions et le second sur 62.
+
+**Limites** : 100 questions seulement, toutes issues de la validation, et un seul jeu de 5 questions par condition. Les colonnes attendues par les références sont en partie arbitraires : un gain peut refléter une meilleure imitation des conventions du benchmark plutôt que de meilleures requêtes.
+
 Lancer un benchmark :
 
 ```bash
 poetry run python -m src.text2sql.evaluate --split validation --shots 0 --name mon_run
+```
+
+Rejouer un run de l'ablation, puis recalculer l'analyse à partir de `results/` :
+
+```bash
+poetry run python -m src.text2sql.evaluate --split validation --shots-file data/shots/s2_riche.json --name mon_run
+poetry run python -m src.text2sql.analyse_ablation
 ```
 
 Les sorties brutes du modèle, les requêtes et les scores par question sont enregistrés dans `results/`, avec les versions du prompt et de la métrique.
@@ -112,7 +148,7 @@ Les sorties brutes du modèle, les requêtes et les scores par question sont enr
 - [x] Injection dynamique du schéma
 - [x] Boucle d'auto-correction
 - [x] Évaluation (execution accuracy, benchmark de 691 questions)
-- [ ] Prompt few-shot
+- [x] Prompt few-shot et ablation sur le style des colonnes
 - [ ] Fine-tuning QLoRA
 - [ ] Serving vLLM et suivi des performances
 
