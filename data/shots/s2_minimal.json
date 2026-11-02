@@ -1,0 +1,22 @@
+[
+  {
+    "question": "boites de Corse avec des forfaits plus chers que la moyenne de Corse",
+    "sql": "SELECT c.nom_entreprise\nFROM clients c\nJOIN abonnements a ON c.client_id = a.client_id\nWHERE c.region = 'Corse'\n  AND a.prix_mensuel > (\n    SELECT AVG(a2.prix_mensuel)\n    FROM clients c2\n    JOIN abonnements a2 ON c2.client_id = a2.client_id\n    WHERE c2.region = 'Corse'\n  );"
+  },
+  {
+    "question": "Donne moi les 3 dernières factures enregistrées",
+    "sql": "SELECT facture_id\nFROM factures\nORDER BY date_facturation DESC\nLIMIT 3;"
+  },
+  {
+    "question": "Quelles factures ont échoué au second semestre 2026 ?",
+    "sql": "SELECT facture_id\nFROM factures\nWHERE statut_paiement = 'Échouée'\n  AND date_facturation >= '2026-07-01'\n  AND date_facturation <= '2026-12-31';"
+  },
+  {
+    "question": "Quels clients ont cumulé plus de 500 euros de factures payées ?",
+    "sql": "SELECT c.nom_entreprise\nFROM clients c\nJOIN abonnements a ON c.client_id = a.client_id\nJOIN factures f ON a.abonnement_id = f.abonnement_id\nWHERE f.statut_paiement = 'Payée'\nGROUP BY c.client_id, c.nom_entreprise\nHAVING SUM(f.montant_paye) > 500;"
+  },
+  {
+    "question": "client avec facture echouee en septembre 2026",
+    "sql": "SELECT DISTINCT c.client_id\nFROM clients c\nJOIN abonnements a ON c.client_id = a.client_id\nJOIN factures f ON a.abonnement_id = f.abonnement_id\nWHERE f.statut_paiement = 'Échouée'\n  AND strftime('%Y-%m', f.date_facturation) = '2026-09';"
+  }
+]
