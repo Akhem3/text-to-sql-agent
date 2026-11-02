@@ -12,7 +12,7 @@ Les tests utilisent une base SQLite temporaire et des faux modèles afin
 de ne pas dépendre d'un modèle réel ni de la base de données du projet.
 
 Lancer depuis la racine du repo :
-    poetry run python -m pytest
+    uv run python -m pytest
 """
 
 import json

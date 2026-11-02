@@ -5,7 +5,7 @@ que par la liste du SELECT. Sinon, l'écart de score entre deux runs ne pourrait
 attribué au seul style des colonnes (facteur confondant).
 
 Lancer depuis la racine du repo :
-    poetry run python -m pytest
+    uv run python -m pytest
 
 Les tests sont ignorés si la base est absente ou si les shots ne sont pas encore écrits.
 """

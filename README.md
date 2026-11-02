@@ -130,14 +130,14 @@ Les exemples, la métrique principale et les 4 comparaisons ont été figés ava
 Lancer un benchmark :
 
 ```bash
-poetry run python -m src.text2sql.evaluate --split validation --shots 0 --name mon_run
+uv run python -m src.text2sql.evaluate --split validation --shots 0 --name mon_run
 ```
 
 Rejouer un run de l'ablation, puis recalculer l'analyse à partir de `results/` :
 
 ```bash
-poetry run python -m src.text2sql.evaluate --split validation --shots-file data/shots/s2_riche.json --name mon_run
-poetry run python -m src.text2sql.analyse_ablation
+uv run python -m src.text2sql.evaluate --split validation --shots-file data/shots/s2_riche.json --name mon_run
+uv run python -m src.text2sql.analyse_ablation
 ```
 
 Les sorties brutes du modèle, les requêtes et les scores par question sont enregistrés dans `results/`, avec les versions du prompt et de la métrique.
@@ -155,4 +155,4 @@ Les sorties brutes du modèle, les requêtes et les scores par question sont enr
 
 ## Stack
 
-Python · Llama 3.1 8B · LangChain (LCEL) · SQLite · Poetry
+Python · Llama 3.1 8B · LangChain (LCEL) · SQLite · uv
