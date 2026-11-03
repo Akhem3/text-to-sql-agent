@@ -1,0 +1,22 @@
+[
+  {
+    "question": "Liste toutes les factures réglées pour les entreprises dont l'email est hébergé chez lopes.org",
+    "sql": "SELECT f.facture_id, c.nom_entreprise, f.montant_paye\nFROM clients c\nJOIN abonnements a ON c.client_id = a.client_id\nJOIN factures f ON a.abonnement_id = f.abonnement_id\nWHERE c.contact_email LIKE '%@lopes.org'\n  AND f.statut_paiement = 'Payée';"
+  },
+  {
+    "question": "Affiche les entreprises par ordre alphabétique",
+    "sql": "SELECT client_id, nom_entreprise, region\nFROM clients\nORDER BY nom_entreprise ASC;"
+  },
+  {
+    "question": "Nombre de factures en échec par abonnement",
+    "sql": "SELECT abonnement_id, COUNT(*), SUM(montant_paye)\nFROM factures\nWHERE statut_paiement = 'Échouée'\nGROUP BY abonnement_id;"
+  },
+  {
+    "question": "donne la proportion de clients inscrits en 2026",
+    "sql": "SELECT SUM(CASE WHEN strftime('%Y', date_inscription) = '2026' THEN 1 ELSE 0 END), COUNT(*), 100.0 * SUM(CASE WHEN strftime('%Y', date_inscription) = '2026' THEN 1 ELSE 0 END) / COUNT(*)\nFROM clients;"
+  },
+  {
+    "question": "Quels abonnements ont généré strictement plus de 4 factures ?",
+    "sql": "SELECT abonnement_id, COUNT(*), SUM(montant_paye)\nFROM factures\nGROUP BY abonnement_id\nHAVING COUNT(*) > 4;"
+  }
+]

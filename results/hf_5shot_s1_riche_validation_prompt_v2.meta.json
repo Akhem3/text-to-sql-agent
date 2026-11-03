@@ -1,0 +1,23 @@
+{
+  "date": "2026-11-02T13:15:58",
+  "backend": "hf",
+  "model": "meta-llama/Llama-3.1-8B-Instruct",
+  "adapter": null,
+  "split": "validation",
+  "n_exemples": 100,
+  "shots": 5,
+  "shots_file": "data/shots/s1_riche.json",
+  "shots_questions": [
+    "Liste toutes les factures réglées pour les entreprises dont l'email est hébergé chez lopes.org",
+    "Affiche les entreprises par ordre alphabétique",
+    "Nombre de factures en échec par abonnement",
+    "donne la proportion de clients inscrits en 2026",
+    "Quels abonnements ont généré strictement plus de 4 factures ?"
+  ],
+  "seed": null,
+  "prompt_version": "v2",
+  "metric_version": "v2",
+  "sql_valide": 0.91,
+  "execution_accuracy": 0.29,
+  "execution_accuracy_relachee": 0.38
+}

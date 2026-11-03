@@ -15,13 +15,14 @@ Lancer depuis la racine du repo :
     poetry run python -m pytest
 """
 
+import json
 import sqlite3
 
 import pytest
 
 from src.text2sql.db import get_categorical_values, get_schema, run_sql
 from src.text2sql.evaluate import evaluate, ordre_impose, results_match
-from src.text2sql.prompts import build_messages, build_schema_context, pick_shots, to_sft_record
+from src.text2sql.prompts import build_messages, build_schema_context, load_shots, pick_shots, to_sft_record
 from src.text2sql.sql_utils import extract_sql
 
 
@@ -191,6 +192,17 @@ def test_pick_shots_distinct_families_and_reproducible():
     first, second = pick_shots(train, 2, seed=1), pick_shots(train, 2, seed=1)
     assert first == second
     assert len({s["famille"] for s in first}) == 2
+
+
+def test_load_shots(tmp_path):
+    ok = tmp_path / "ok.json"
+    ok.write_text(json.dumps([{"question": "Q1", "sql": "SELECT 1;", "famille": "F"}]), encoding="utf-8")
+    assert load_shots(ok) == [{"question": "Q1", "sql": "SELECT 1;", "famille": "F"}]
+
+    incomplet = tmp_path / "incomplet.json"
+    incomplet.write_text(json.dumps([{"question": "Q1"}]), encoding="utf-8")
+    with pytest.raises(ValueError, match="shot 0"):
+        load_shots(incomplet)
 
 
 def test_evaluate_perfect_and_broken_backend(db_path):

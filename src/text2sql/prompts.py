@@ -4,8 +4,10 @@ Si le format change ici, il change partout : le modèle fine-tuné est entraîn�
 exactement sur ce qu'il verra à l'inférence.
 """
 
+import json
 import random
 from collections import defaultdict
+from pathlib import Path
 
 PROMPT_VERSION = "v2"
 
@@ -72,3 +74,13 @@ def pick_shots(train, k: int, seed: int = 42) -> list[dict]:
     families = sorted(by_family)
     rng.shuffle(families)
     return [rng.choice(by_family[family]) for family in families[:k]]
+
+
+def load_shots(path: str | Path) -> list[dict]:
+    """Shots écrits à la main (JSON : liste de {question, sql}), pour les ablations à shots contrôlés."""
+    shots = json.loads(Path(path).read_text(encoding="utf-8"))
+    for i, shot in enumerate(shots):
+        manquantes = {"question", "sql"} - shot.keys()
+        if manquantes:
+            raise ValueError(f"{path} : shot {i} sans {sorted(manquantes)}")
+    return shots
