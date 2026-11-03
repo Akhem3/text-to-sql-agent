@@ -1,7 +1,7 @@
 """Analyse de l'ablation minimal/riche : recalcule les chiffres cités dans le README.
 
 Lancer depuis la racine du repo :
-    poetry run python -m src.text2sql.analyse_ablation
+    uv run python -m src.text2sql.analyse_ablation
 
 Les comparaisons de PRINCIPALES et la métrique stricte ont été figées avant de voir les scores.
 Tout le reste est secondaire ou exploratoire : à lire comme des pistes, pas comme des preuves.

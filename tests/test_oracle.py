@@ -7,7 +7,7 @@ directement les requêtes SQL de référence (gold).
 Les tests couvrent les splits validation et test du dataset.
 
 Lancer depuis la racine du repo :
-    poetry run python -m pytest
+    uv run python -m pytest
 
 Les tests sont ignorés si la base de données ou le dataset sont absents.
 """

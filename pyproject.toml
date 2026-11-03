@@ -27,11 +27,6 @@ dependencies = [
     "llama-cpp-python (>=0.3.36,<0.4.0)"
 ]
 
-
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
-
 [dependency-groups]
 dev = [
     "ruff (>=0.16.9,<0.17.0)",
@@ -39,3 +34,16 @@ dev = [
     "ipykernel (>=7.4.0,<8.0.0)",
     "ipywidgets (>=8.1.9,<9.0.0)"
 ]
+
+# Le code tourne depuis la racine (`python -m src.text2sql...`) sans être installé :
+# uv ne doit donc pas construire le projet, et aucun [build-system] n'est nécessaire.
+[tool.uv]
+package = false
+
+# Rend `from src...` importable quelle que soit la commande (`pytest` seul n'ajoute que tests/).
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+# À 88, 161 lignes du code existant dépassent la limite, contre 6 à 120.
+[tool.ruff]
+line-length = 120

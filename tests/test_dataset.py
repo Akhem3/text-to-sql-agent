@@ -5,7 +5,7 @@ et que chaque requête de référence renvoie au moins une ligne sur la base :
 un gold vide accepterait comme correcte n'importe quelle prédiction vide.
 
 Lancer depuis la racine du repo :
-    poetry run python -m pytest
+    uv run python -m pytest
 
 Les tests sont ignorés si la base de données ou le dataset sont absents.
 """
