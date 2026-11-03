@@ -43,3 +43,7 @@ package = false
 # Rend `from src...` importable quelle que soit la commande (`pytest` seul n'ajoute que tests/).
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+# À 88, 161 lignes du code existant dépassent la limite, contre 6 à 120.
+[tool.ruff]
+line-length = 120
