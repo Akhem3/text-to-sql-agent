@@ -79,6 +79,32 @@ sqlite3.OperationalError: no such column: region
 
 **Tentative 2** : la colonne `region` appartient à la table `clients`, pas à `abonnements`. L'agent corrige en ajoutant la jointure nécessaire, et la requête s'exécute avec succès (voir la requête de l'exemple ci-dessus).
 
+## Installation
+
+Le projet demande Python 3.13 et [uv](https://docs.astral.sh/uv/getting-started/installation/), qui installe les versions exactes de `uv.lock` :
+
+```bash
+uv sync
+```
+
+Les poids de Llama 3.1 sont soumis à une licence : acceptez-la sur la [page du modèle](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct), puis connectez-vous à Hugging Face :
+
+```bash
+uv run hf auth login
+```
+
+La base SQLite et le benchmark ne sont pas versionnés. Pour les générer, exécutez le notebook [`01_generation_bdd.ipynb`](notebooks/01_generation_bdd.ipynb), qui crée `data/raw/banque_entreprise.db`, puis lancez :
+
+```bash
+uv run python -m src.finetuning.build_dataset
+```
+
+Pour vérifier l'installation :
+
+```bash
+uv run pytest
+```
+
 ## Évaluation
 
 Benchmark maison de questions métier en français, chacune associée à une requête SQL de référence : 491 exemples d'entraînement, 100 de validation et 100 de test, répartis en 12 familles (filtres, jointures, `GROUP BY` / `HAVING`, dates, top-N par groupe, ratios…). Le split test est réservé à l'évaluation finale.
