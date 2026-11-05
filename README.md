@@ -272,6 +272,12 @@ uv run python -m src.text2sql.evaluate --backend mlx \
   --split validation --name mon_run
 ```
 
+Recalculer les chiffres du fine-tuning et du test à partir de `results/`, sans relancer de modèle :
+
+```bash
+uv run python -m src.text2sql.analyse_finetuning
+```
+
 ## Avancement
 
 - [x] Agent LangChain/LCEL (Llama 3.1 8B)
