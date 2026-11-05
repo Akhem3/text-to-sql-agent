@@ -1,0 +1,17 @@
+{
+  "date": "2026-11-04T14:32:51",
+  "backend": "mlx",
+  "model": "models/llama31-8b-4bit",
+  "adapter": "models/adapters/llama31-4bit-lora-v1-iter440",
+  "split": "validation",
+  "n_exemples": 100,
+  "shots": 0,
+  "shots_file": null,
+  "shots_questions": [],
+  "seed": 42,
+  "prompt_version": "v2",
+  "metric_version": "v2",
+  "sql_valide": 0.98,
+  "execution_accuracy": 0.4,
+  "execution_accuracy_relachee": 0.47
+}
