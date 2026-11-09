@@ -96,6 +96,7 @@ def test_adaptateur_non_applique_detecte(tmp_path):
 
 def test_mauvais_scale_detecte(tmp_path):
     base, fusionne, adaptateur = fusion_correcte()
+    # Mauvais scale : les poids changent, donc seule la comparaison au calcul attendu peut le voir.
     fusionne[CIBLE] = calculer_fusion(
         base[CIBLE],
         adaptateur["model.layers.1.mlp.up_proj.lora_a"],
