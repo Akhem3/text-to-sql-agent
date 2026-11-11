@@ -7,7 +7,7 @@ Exemples (depuis la racine du repo) :
     uv run python -m src.text2sql.evaluate --split validation --shots 5 --seed 1  --name hf_5shot_s1_validation_prompt_v2
     uv run python -m src.text2sql.evaluate --split validation --shots 5 --seed 2  --name hf_5shot_s2_validation_prompt_v2
     uv run python -m src.text2sql.evaluate --backend mlx --model models/llama31-8b-4bit --name mlx4bit_0shot_validation_prompt_v2
-    python -m src.text2sql.evaluate --backend llamacpp --model models/llama-q4.gguf --split test
+    uv run python -m src.text2sql.evaluate --backend llamacpp --model http://localhost:8080 --limit 10
 """
 
 import argparse
@@ -138,7 +138,7 @@ def summarize(df: pd.DataFrame) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--backend", choices=["hf", "mlx", "llamacpp"], default="hf")
-    parser.add_argument("--model", default=DEFAULT_MODEL, help="id Hugging Face, dossier MLX ou chemin d'un .gguf")
+    parser.add_argument("--model", default=DEFAULT_MODEL, help="id Hugging Face, dossier MLX ou URL de llama-server")
     parser.add_argument("--adapter", default=None, help="adaptateur LoRA (backends hf et mlx)")
     parser.add_argument("--split", choices=["train", "validation", "test"], default="validation")
     # Exclusifs : un run doit avoir une seule origine de shots, sinon le meta devient ambigu.
@@ -173,6 +173,8 @@ def main() -> None:
         "backend": args.backend,
         "model": args.model,
         "adapter": args.adapter,
+        # Avec llamacpp, --model n'est qu'une URL : seul le serveur sait quel GGUF il sert.
+        "model_servi": getattr(backend, "model_id", None),
         "split": args.split,
         "n_exemples": len(df),
         "shots": len(shots),

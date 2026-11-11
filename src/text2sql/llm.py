@@ -102,11 +102,41 @@ class LlamaCppBackend:
         return output["choices"][0]["message"]["content"].strip()
 
 
+class LlamaServerBackend:
+    """llama-server (llama.cpp) interrogé en HTTP via son API compatible OpenAI.
+
+    On évalue le serveur lui-même, pas la bibliothèque en process : c'est lui qui sera déployé,
+    et c'est lui qui applique le chat template. Le client envoie donc des messages, pas un prompt.
+    """
+
+    def __init__(self, base_url: str, max_new_tokens: int = MAX_NEW_TOKENS, client=None):
+        import httpx
+
+        self.max_new_tokens = max_new_tokens
+        # Connexion courte : un serveur éteint doit échouer tout de suite. Lecture longue : en CPU
+        # (conteneur Docker, sans Metal), une génération peut dépasser de loin les 5 s par défaut.
+        self.client = client or httpx.Client(base_url=base_url, timeout=httpx.Timeout(300.0, connect=5.0))
+        # Échoue dès l'init si le serveur ne répond pas, plutôt qu'à la première question ;
+        # et garde le nom du GGUF servi, pour que meta.json dise quel fichier a été évalué.
+        reponse = self.client.get("/v1/models")
+        reponse.raise_for_status()
+        self.model_id = reponse.json()["data"][0]["id"]
+
+    def generate(self, messages: list[dict]) -> str:
+        payload = {"messages": messages,"temperature": 0.0,"max_tokens": self.max_new_tokens,"stream": False}
+        output = self.client.post("/v1/chat/completions", json=payload)
+        output.raise_for_status()
+        return output.json()["choices"][0]["message"]["content"].strip()
+
+
 def load_backend(name: str, model: str, adapter: str | None = None) -> Backend:
     if name == "hf":
         return HFBackend(model, adapter=adapter)
     if name == "mlx":
         return MLXBackend(model, adapter=adapter)
     if name == "llamacpp":
-        return LlamaCppBackend(model)
+        if adapter:
+            # L'adaptateur est déjà fusionné dans le GGUF : l'accepter ici laisserait croire qu'il est appliqué.
+            raise ValueError("--adapter n'est pas supporté par llamacpp (adaptateur à fusionner dans le GGUF)")
+        return LlamaServerBackend(model)
     raise ValueError(f"Backend inconnu : {name!r} (attendu : 'hf', 'mlx' ou 'llamacpp')")
