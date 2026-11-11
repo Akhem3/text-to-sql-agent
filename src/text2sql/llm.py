@@ -1,6 +1,6 @@
 """Backends d'inférence interchangeables : même interface generate(messages) -> str.
 
-Les imports lourds (torch, transformers, mlx_lm, llama_cpp) sont faits à l'instanciation,
+Les imports lourds (torch, transformers, mlx_lm, httpx) sont faits à l'instanciation,
 pas à l'import du module : importer ce fichier ne charge aucun modèle.
 """
 
@@ -84,22 +84,6 @@ class MLXBackend:
                    max_tokens=self.max_new_tokens
         )
         return output.strip()
-
-
-class LlamaCppBackend:
-    """llama.cpp via llama-cpp-python : modèle GGUF, quantifié ou non."""
-
-    def __init__(self, gguf_path: str, n_ctx: int = 4096, max_new_tokens: int = MAX_NEW_TOKENS):
-        from llama_cpp import Llama
-
-        self.llm = Llama(model_path=gguf_path, n_ctx=n_ctx, n_gpu_layers=-1, verbose=False)
-        self.max_new_tokens = max_new_tokens
-
-    def generate(self, messages: list[dict]) -> str:
-        output = self.llm.create_chat_completion(
-            messages=messages, temperature=0.0, max_tokens=self.max_new_tokens
-        )
-        return output["choices"][0]["message"]["content"].strip()
 
 
 class LlamaServerBackend:
