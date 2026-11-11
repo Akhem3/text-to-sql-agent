@@ -123,7 +123,7 @@ class LlamaServerBackend:
         self.model_id = reponse.json()["data"][0]["id"]
 
     def generate(self, messages: list[dict]) -> str:
-        payload = {"messages": messages,"temperature": 0.0,"max_tokens": self.max_new_tokens,"stream": False}
+        payload = {"messages": messages, "temperature": 0.0, "max_tokens": self.max_new_tokens, "stream": False}
         output = self.client.post("/v1/chat/completions", json=payload)
         output.raise_for_status()
         return output.json()["choices"][0]["message"]["content"].strip()
