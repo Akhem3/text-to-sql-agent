@@ -97,6 +97,23 @@ sqlite3.OperationalError: no such column: region
 
 **Tentative 2** : la colonne `region` appartient à la table `clients`, pas à `abonnements`. L'agent corrige en ajoutant la jointure nécessaire, et la requête s'exécute avec succès (voir la requête de l'exemple ci-dessus).
 
+## Limites
+
+**La boucle de correction ne rattrape que les requêtes qui échouent.** Elle se déclenche sur une erreur SQLite, avec 3 tentatives au maximum. Une requête qui s'exécute mais renvoie une mauvaise réponse passe sans relance : sans requête de référence, l'agent n'a aucun moyen de savoir que le résultat est faux.
+
+Avant de mesurer la boucle, l'évaluation existante permet d'en estimer le plafond. Sur la validation, avec le modèle servi (GGUF Q4_K_M, une seule génération), 57 questions sur 100 échouent :
+
+| Type d'échec | Questions | Atteint par la boucle |
+|---|---|---|
+| Erreur SQLite (colonne inventée, alias invalide…) | 6 | oui |
+| Requête valide, résultat faux | 51 | non |
+
+Le gain de la boucle est donc plafonné à **+6 points d'EX**, et sera probablement plus faible : plusieurs de ces 6 requêtes sont des jointures ou des CTE complexes. Environ 90 % des échecs viennent du sens de la requête (colonnes, filtres), pas de sa syntaxe. En contrepartie, la boucle coûte peu : une 2e génération n'a lieu que sur les erreurs.
+
+**Pas de relance sur un résultat vide.** C'est un choix délibéré : « aucun client ne correspond » est souvent la bonne réponse, et une relance pousserait le modèle à inventer un filtre pour renvoyer quelque chose.
+
+**Piste non explorée : la self-consistency.** Elle consiste à générer plusieurs requêtes, les exécuter, puis garder le résultat majoritaire. Elle pourrait attaquer une partie des requêtes valides mais fausses, au prix d'une latence multipliée par le nombre de générations sur chaque question.
+
 ## Installation
 
 Le projet demande Python 3.13 et [uv](https://docs.astral.sh/uv/getting-started/installation/), qui installe les versions exactes de `uv.lock` :
