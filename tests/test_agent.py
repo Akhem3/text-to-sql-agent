@@ -9,7 +9,15 @@ import sqlite3
 import httpx
 import pytest
 
-from src.serving.agent import AUCUNE_REQUETE, Tentative, construire_graphe, construire_messages, executer, router
+from src.serving.agent import (
+    AUCUNE_REQUETE,
+    Tentative,
+    construire_graphe,
+    construire_messages,
+    executer,
+    formater_tableau,
+    router,
+)
 from src.text2sql.db import ResultatSQL
 from src.text2sql.prompts import build_messages
 
@@ -139,6 +147,25 @@ KO = _ratee("SELECT x;", "no such column: x")
 )
 def test_router(tentatives, max_tentatives, attendu):
     assert router(tentatives, max_tentatives) == attendu
+
+
+# --- formater_tableau -------------------------------------------------------
+
+
+def test_formater_tableau_aligne_les_colonnes():
+    resultat = ResultatSQL([("Bretagne", 1), ("Corse", 2)], ["region", "n"])
+    assert formater_tableau(resultat) == "region   | n\n---------+--\nBretagne | 1\nCorse    | 2"
+
+
+def test_formater_tableau_cellule_plus_large_que_l_en_tete():
+    # La largeur vient du contenu le plus long, pas seulement de l'en-tête.
+    resultat = ResultatSQL([(1, 1234.5)], ["id", "montant"])
+    assert formater_tableau(resultat) == "id | montant\n---+--------\n1  | 1234.5"
+
+
+def test_formater_tableau_affiche_null():
+    resultat = ResultatSQL([("Corse", None)], ["region", "email"])
+    assert formater_tableau(resultat) == "region | email\n-------+------\nCorse  | NULL"
 
 
 # --- graphe -----------------------------------------------------------------
