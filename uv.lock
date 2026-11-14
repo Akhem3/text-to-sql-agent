@@ -3753,17 +3753,28 @@ wheels = [
 name = "text-to-sql-agent"
 version = "0.1.0"
 source = { virtual = "." }
+default-groups = ["dev", "ml"]
 dependencies = [
+    { name = "httpx" },
+    { name = "langgraph" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "ipykernel" },
+    { name = "ipywidgets" },
+    { name = "pytest" },
+    { name = "ruff" },
+]
+ml = [
     { name = "accelerate" },
     { name = "chromadb" },
     { name = "datasets" },
     { name = "faker" },
     { name = "gguf" },
-    { name = "httpx" },
     { name = "langchain" },
     { name = "langchain-community" },
     { name = "langchain-huggingface" },
-    { name = "langgraph" },
     { name = "mlx-lm" },
     { name = "peft" },
     { name = "sentence-transformers" },
@@ -3775,26 +3786,28 @@ dependencies = [
     { name = "trl" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "ipykernel" },
-    { name = "ipywidgets" },
-    { name = "pytest" },
-    { name = "ruff" },
-]
-
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1,<0.29" },
+    { name = "langgraph", specifier = ">=1.2.12,<2" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "ipykernel", specifier = ">=7.4.0,<8.0.0" },
+    { name = "ipywidgets", specifier = ">=8.1.9,<9.0.0" },
+    { name = "pytest", specifier = ">=9.1.1,<10.0.0" },
+    { name = "ruff", specifier = ">=0.16.9,<0.17.0" },
+]
+ml = [
     { name = "accelerate", specifier = ">=1.15.0,<2.0.0" },
     { name = "chromadb", specifier = ">=1.5.9,<2.0.0" },
     { name = "datasets", specifier = ">=5.0.1,<6.0.0" },
     { name = "faker", specifier = ">=40.40.0,<41.0.0" },
     { name = "gguf", specifier = ">=0.19.0,<0.20.0" },
-    { name = "httpx", specifier = ">=0.28.1,<0.29" },
     { name = "langchain", specifier = ">=1.4.3,<2.0.0" },
     { name = "langchain-community", specifier = ">=0.4.2,<0.5.0" },
     { name = "langchain-huggingface", specifier = ">=1.2.2,<2.0.0" },
-    { name = "langgraph", specifier = ">=1.2.12,<2" },
     { name = "mlx-lm", specifier = ">=0.32.2,<0.33.0" },
     { name = "peft", specifier = ">=0.21.1,<0.22.0" },
     { name = "sentence-transformers", specifier = ">=6.1.0,<7.0.0" },
@@ -3804,14 +3817,6 @@ requires-dist = [
     { name = "torch", specifier = ">=2.14.0,<3.0.0" },
     { name = "transformers", specifier = ">=5.17.0,<6.0.0" },
     { name = "trl", specifier = ">=1.14.1,<2.0.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "ipykernel", specifier = ">=7.4.0,<8.0.0" },
-    { name = "ipywidgets", specifier = ">=8.1.9,<9.0.0" },
-    { name = "pytest", specifier = ">=9.1.1,<10.0.0" },
-    { name = "ruff", specifier = ">=0.16.9,<0.17.0" },
 ]
 
 [[package]]
