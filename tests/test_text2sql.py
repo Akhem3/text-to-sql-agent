@@ -24,22 +24,7 @@ from src.text2sql.db import execute_sql, get_categorical_values, get_schema, run
 from src.text2sql.evaluate import evaluate, ordre_impose, results_match
 from src.text2sql.prompts import build_messages, build_schema_context, load_shots, pick_shots, to_sft_record
 from src.text2sql.sql_utils import extract_sql
-
-
-@pytest.fixture()
-def db_path(tmp_path):
-    path = tmp_path / "test.db"
-    conn = sqlite3.connect(path)
-    conn.executescript(
-        """
-        CREATE TABLE clients (client_id INTEGER PRIMARY KEY AUTOINCREMENT, region TEXT);
-        INSERT INTO clients (region) VALUES ('Bretagne'), ('Corse'), ('Corse');
-        """
-    )
-    conn.commit()
-    conn.close()
-    return path
-
+from tests.fakes import FauxBackend
 
 EXAMPLES = [
     {"question": "Combien de clients ?", "sql": "SELECT COUNT(*) FROM clients;",
@@ -47,14 +32,6 @@ EXAMPLES = [
     {"question": "Quelles régions ?", "sql": "SELECT DISTINCT region FROM clients ORDER BY region;",
      "famille": "distinct", "difficulte": "facile"},
 ]
-
-
-class FakeBackend:
-    def __init__(self, answers):
-        self.answers = list(answers)
-
-    def generate(self, messages):
-        return self.answers.pop(0)
 
 
 def test_extract_sql():
@@ -255,18 +232,18 @@ def test_load_shots(tmp_path):
 
 def test_evaluate_perfect_and_broken_backend(db_path):
     schema = get_schema(db_path)
-    perfect = FakeBackend(["```sql\n" + ex["sql"] + "\n```" for ex in EXAMPLES])
+    perfect = FauxBackend(["```sql\n" + ex["sql"] + "\n```" for ex in EXAMPLES])
     df = evaluate(perfect, EXAMPLES, schema, db_path=db_path)
     assert df["correct"].all() and df["valide"].all() and df["correct_relache"].all()
 
-    broken = FakeBackend(["SELECT n_importe_quoi FROM nulle_part;", "SELECT COUNT(*) FROM clients;"])
+    broken = FauxBackend(["SELECT n_importe_quoi FROM nulle_part;", "SELECT COUNT(*) FROM clients;"])
     df = evaluate(broken, EXAMPLES, schema, db_path=db_path)
     assert list(df["valide"]) == [False, True]
     assert list(df["correct"]) == [False, False]
     assert list(df["correct_relache"]) == [False, False]
 
     # Bonne réponse + une colonne en trop : fausse en strict, juste en relâché.
-    extra = FakeBackend([
+    extra = FauxBackend([
         "SELECT COUNT(*), 0 FROM clients;",
         "SELECT region, COUNT(*) FROM clients GROUP BY region ORDER BY region;",
     ])

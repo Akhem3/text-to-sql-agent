@@ -4,8 +4,6 @@ Lancer depuis la racine du repo :
     uv run python -m pytest tests/test_agent.py
 """
 
-import sqlite3
-
 import httpx
 import pytest
 
@@ -20,24 +18,10 @@ from src.serving.agent import (
 )
 from src.text2sql.db import ResultatSQL
 from src.text2sql.prompts import build_messages
+from tests.fakes import FauxBackend
 
 SCHEMA = "CREATE TABLE clients (client_id INTEGER PRIMARY KEY, region TEXT);"
 QUESTION = "Combien de clients en Corse ?"
-
-
-@pytest.fixture()
-def db_path(tmp_path):
-    path = tmp_path / "test.db"
-    conn = sqlite3.connect(path)
-    conn.executescript(
-        """
-        CREATE TABLE clients (client_id INTEGER PRIMARY KEY AUTOINCREMENT, region TEXT);
-        INSERT INTO clients (region) VALUES ('Bretagne'), ('Corse'), ('Corse');
-        """
-    )
-    conn.commit()
-    conn.close()
-    return path
 
 
 def _ratee(sql: str, erreur: str) -> Tentative:
@@ -169,19 +153,6 @@ def test_formater_tableau_affiche_null():
 
 
 # --- graphe -----------------------------------------------------------------
-
-
-class FauxBackend:
-    """Renvoie des réponses écrites à l'avance et garde les messages reçus, pour vérifier ce que le modèle a vu."""
-
-    def __init__(self, reponses):
-        self.reponses = list(reponses)
-        self.recus = []
-
-    def generate(self, messages):
-        self.recus.append(messages)
-        # IndexError si le graphe appelle le modèle plus souvent que prévu : le test échoue bruyamment.
-        return self.reponses.pop(0)
 
 
 def _lancer(backend, db_path, **options):
