@@ -29,74 +29,6 @@ flowchart LR
     E -- succès --> O[Résultat]
 ```
 
-**L'agent et le benchmark sont pour l'instant séparés.** L'agent utilise encore le modèle de base 16 bits, sans l'adaptateur. Le benchmark mesure une seule génération, sans boucle de correction : les scores ci-dessus ne décrivent donc pas l'agent complet.
-
-## Exemple
-
-Exemple produit par l'agent avec le modèle de base.
-
-**Question :** « Quels sont les 3 clients avec les plus gros montants d'abonnements au sein de chaque région ? »
-
-**Requête SQL générée :**
-
-```sql
-WITH Ranked AS (
-    SELECT T3.region, T1.client_id,
-           SUM(T1.prix_mensuel) AS total_abonnement,
-           ROW_NUMBER() OVER (PARTITION BY T3.region
-                              ORDER BY SUM(T1.prix_mensuel) DESC) AS rn
-    FROM abonnements T1
-    JOIN clients T2 ON T1.client_id = T2.client_id
-    JOIN clients T3 ON T1.client_id = T3.client_id
-    GROUP BY T3.region, T1.client_id
-)
-SELECT T2.nom_entreprise, T3.region, T1.total_abonnement
-FROM Ranked T1
-JOIN clients T2 ON T1.client_id = T2.client_id
-JOIN clients T3 ON T1.client_id = T3.client_id
-WHERE T1.rn <= 3;
-```
-
-**Résultat (extrait) :**
-
-| Région | Client | Montant d'abonnement |
-|---|---|---|
-| Alsace | Fabre | 552,20 € |
-| Alsace | Martin | 551,47 € |
-| Alsace | Joly | 493,31 € |
-| Aquitaine | Le Goff SARL | 581,67 € |
-| Aquitaine | Wagner | 526,41 € |
-| Aquitaine | Bailly S.A. | 508,53 € |
-
-*Base de démonstration avec des données fictives.*
-
-## Exemple d'auto-correction
-
-**Tentative 1** : l'agent génère une requête qui échoue :
-
-```sql
-WITH Ranked AS (
-    SELECT region, client_id,
-           SUM(prix_mensuel) AS total_abonnement,
-           ROW_NUMBER() OVER (PARTITION BY region
-                              ORDER BY SUM(prix_mensuel) DESC) AS rn
-    FROM abonnements
-    GROUP BY region, client_id
-)
-SELECT nom_entreprise, region, total_abonnement
-FROM Ranked
-JOIN clients ON Ranked.client_id = clients.client_id
-WHERE rn <= 3;
-```
-
-**Erreur SQLite renvoyée à l'agent :**
-
-```
-sqlite3.OperationalError: no such column: region
-```
-
-**Tentative 2** : la colonne `region` appartient à la table `clients`, pas à `abonnements`. L'agent corrige en ajoutant la jointure nécessaire, et la requête s'exécute avec succès (voir la requête de l'exemple ci-dessus).
-
 ## Limites
 
 **La boucle de correction ne rattrape que les requêtes qui échouent.** Elle se déclenche sur une erreur SQLite, avec 3 tentatives au maximum. Une requête qui s'exécute mais renvoie une mauvaise réponse passe sans relance : sans requête de référence, l'agent n'a aucun moyen de savoir que le résultat est faux.
@@ -140,11 +72,28 @@ Pour vérifier l'installation :
 uv run pytest
 ```
 
-Pour lancer l'agent sur sa question d'exemple :
+## Lancer l'agent avec llama-server
+
+L'agent de production (`src/serving/agent.py`) interroge le modèle fine-tuné, quantifié en GGUF Q4_K_M, via [llama-server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server). Il faut deux terminaux.
+
+Terminal 1, le serveur (depuis la racine du repo) :
 
 ```bash
-uv run python src/text2sql/agent.py
+~/tools/llama.cpp/build/bin/llama-server -m models/gguf/llama31-lora-v1-iter440-Q4_K_M.gguf \
+    -ngl 99 -c 4096 --port 8080 --chat-template-kwargs '{"date_string": "26 Jul 2024"}'
 ```
+
+- `-ngl 99` : toutes les couches sur le GPU (Metal sur Mac).
+- `-c 4096` : contexte assez large pour le schéma de la base, inclus dans chaque prompt.
+- `--chat-template-kwargs` : **obligatoire**. Le template de Llama 3.1 écrit une ligne `Today Date:` dans le prompt système. HF y laisse `26 Jul 2024`, la date vue à l'entraînement et à l'évaluation, alors que llama-server y met la date du jour. Sans cette option, le prompt diffère de celui qui a été mesuré, sans qu'aucune erreur ne le signale (détecté par `tests/test_llm_server_integration.py`).
+
+Terminal 2, une fois `listening on http://127.0.0.1:8080` affiché :
+
+```bash
+uv run python -m src.serving.agent "Quel est le solde moyen des comptes courants ?"
+```
+
+Options : `--url` (défaut `http://localhost:8080`), `--max-tentatives` (défaut 3), `--max-lignes` (défaut 20).
 
 ## Évaluation
 
