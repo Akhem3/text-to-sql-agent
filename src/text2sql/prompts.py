@@ -32,6 +32,13 @@ SYSTEM_TEMPLATE = (
 )
 
 
+# Tour user envoyé après un SQL en échec. Pas de PROMPT_VERSION à bumper : ce texte n'apparaît
+# jamais au premier appel, celui qu'on évalue.
+# « Erreur » et non « Erreur SQLite » : le délai dépassé et la réponse sans SQL sont nos propres messages.
+# La consigne finale reprend celle du prompt système : une excuse ou une explication casserait extract_sql.
+CORRECTION_TEMPLATE = "Erreur : {erreur}\nCorrige la requête. Réponds uniquement avec la requête SQL corrigée."
+
+
 def _sql_literal(value) -> str:
     """Valeur écrite comme dans une requête SQLite, pour que le modèle la recopie telle quelle."""
     if isinstance(value, str):
