@@ -33,14 +33,22 @@ flowchart LR
 
 **La boucle de correction ne rattrape que les requêtes qui échouent.** Elle se déclenche sur une erreur SQLite, avec 3 tentatives au maximum. Une requête qui s'exécute mais renvoie une mauvaise réponse passe sans relance : sans requête de référence, l'agent n'a aucun moyen de savoir que le résultat est faux.
 
-Avant de mesurer la boucle, l'évaluation existante permet d'en estimer le plafond. Sur la validation, avec le modèle servi (GGUF Q4_K_M, une seule génération), 57 questions sur 100 échouent :
+Sur la validation, avec le modèle servi (GGUF Q4_K_M), 57 questions sur 100 échouent en une seule génération : 6 sur une erreur SQLite, que la boucle peut relancer, et 51 sur une requête valide mais fausse, qu'elle ne voit pas. Le gain était donc plafonné à +6 points. Mesuré sur l'agent complet :
 
-| Type d'échec | Questions | Atteint par la boucle |
+| Validation (100 questions) | Tentative 1 | Agent (3 tentatives max.) |
 |---|---|---|
-| Erreur SQLite (colonne inventée, alias invalide…) | 6 | oui |
-| Requête valide, résultat faux | 51 | non |
+| SQL valide | 94 % | 97 % |
+| Execution accuracy | 43 % | **44 %** |
+| Latence moyenne | 3,1 s | 4,2 s |
 
-Le gain de la boucle est donc plafonné à **+6 points d'EX**, et sera probablement plus faible : plusieurs de ces 6 requêtes sont des jointures ou des CTE complexes. Environ 90 % des échecs viennent du sens de la requête (colonnes, filtres), pas de sa syntaxe. En contrepartie, la boucle coûte peu : une 2e génération n'a lieu que sur les erreurs.
+*La tentative 1 reproduit à l'identique les 100 requêtes du run `evaluate.py` du même GGUF : à température 0, llama-server est déterministe, et les deux colonnes se comparent directement.*
+
+**La boucle rattrape 1 question sur 6.** Sur les 6 relancées, 3 deviennent valides, mais une seule devient juste. Les relances ont deux défauts :
+
+- **Le modèle corrige le mauvais côté de l'erreur.** Face à `no such column: count_abos`, il renomme la colonne qu'il appelle (`count_abos`, puis `count`, puis `abo_count`) au lieu d'ajouter le `AS count_abos` qui manque dans la sous-requête. Il n'y a aucune répétition exacte sur les 10 relances, mais la plupart sont des retouches cosmétiques qui reproduisent la même erreur.
+- **Une erreur bruyante peut devenir silencieuse.** Pour corriger `AVG(SUM(...))`, que SQLite refuse, le modèle a supprimé le `SUM` : la requête s'exécute, mais elle calcule autre chose. C'est le pire cas, car l'utilisateur ne voit plus d'erreur.
+
+5 des 6 erreurs ont la même structure : un agrégat appliqué à un agrégat calculé par groupe (`AVG(COUNT(...))`, `AVG(SUM(...))`, `MAX` d'une somme mensuelle), ce qui demande une sous-requête ou une CTE avec un alias. Le message de SQLite dit ce qui ne va pas, pas comment restructurer la requête. Des indices ciblés dans le message de correction viseraient ce cas, mais les concevoir sur ces 6 questions puis les mesurer dessus reviendrait à surapprendre la validation.
 
 **Pas de relance sur un résultat vide.** C'est un choix délibéré : « aucun client ne correspond » est souvent la bonne réponse, et une relance pousserait le modèle à inventer un filtre pour renvoyer quelque chose.
 
@@ -200,6 +208,12 @@ Lancer un benchmark :
 uv run python -m src.text2sql.evaluate --split validation --shots 0 --name mon_run
 ```
 
+Évaluer l'agent complet, boucle de correction comprise (llama-server lancé, voir [Lancer l'agent](#lancer-lagent-avec-llama-server)) :
+
+```bash
+uv run python -m src.serving.evaluate_agent --split validation --name mon_run
+```
+
 Rejouer un run de l'ablation, puis recalculer l'analyse à partir de `results/` :
 
 ```bash
@@ -246,16 +260,15 @@ uv run python -m src.text2sql.analyse_finetuning
 
 ## Avancement
 
-- [x] Agent LangChain/LCEL (Llama 3.1 8B)
 - [x] Injection dynamique du schéma
-- [x] Boucle d'auto-correction
 - [x] Évaluation (execution accuracy, benchmark de 691 questions)
 - [x] Prompt few-shot et ablation sur le style des colonnes
 - [x] Fine-tuning QLoRA
-- [ ] Brancher le modèle fine-tuné dans l'agent
+- [x] Agent LangGraph avec boucle de correction, sur le modèle fine-tuné servi par llama.cpp
+- [x] Évaluation de l'agent complet
 - [ ] Mise en production (llama.cpp, Docker)
 - [ ] Interface
 
 ## Stack
 
-Python · Llama 3.1 8B · MLX (mlx-lm) · LangChain (LCEL) · SQLite · uv
+Python · Llama 3.1 8B · MLX (mlx-lm) · llama.cpp · LangGraph · SQLite · uv

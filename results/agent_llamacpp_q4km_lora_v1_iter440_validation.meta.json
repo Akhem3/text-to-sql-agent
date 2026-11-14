@@ -1,0 +1,15 @@
+{
+  "date": "2026-11-15T00:32:10",
+  "url": "http://localhost:8080",
+  "model_servi": "models/gguf/llama31-lora-v1-iter440-Q4_K_M.gguf",
+  "split": "validation",
+  "n_exemples": 100,
+  "max_tentatives": 3,
+  "prompt_version": "v2",
+  "metric_version": "v2",
+  "sql_valide_t1": 0.94,
+  "sql_valide": 0.97,
+  "execution_accuracy_t1": 0.43,
+  "execution_accuracy": 0.44,
+  "execution_accuracy_relachee": 0.53
+}
