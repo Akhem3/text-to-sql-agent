@@ -6,9 +6,10 @@ Lancer depuis la racine du repo :
 
 import sqlite3
 
+import httpx
 import pytest
 
-from src.serving.agent import AUCUNE_REQUETE, Tentative, construire_messages, executer
+from src.serving.agent import AUCUNE_REQUETE, Tentative, construire_graphe, construire_messages, executer, router
 from src.text2sql.db import ResultatSQL
 from src.text2sql.prompts import build_messages
 
@@ -113,3 +114,100 @@ def test_correction_refuse_une_tentative_reussie():
     reussie = Tentative("SELECT 1;", ResultatSQL([(1,)], ["1"]))
     with pytest.raises(ValueError, match="sans erreur"):
         construire_messages(QUESTION, SCHEMA, [ratee, reussie])
+
+
+# --- router -----------------------------------------------------------------
+
+OK = Tentative("SELECT 1;", ResultatSQL([(1,)], ["1"]))
+VIDE = Tentative("SELECT 1 WHERE 0;", ResultatSQL([], ["1"]))
+KO = _ratee("SELECT x;", "no such column: x")
+
+
+@pytest.mark.parametrize(
+    ("tentatives", "max_tentatives", "attendu"),
+    [
+        ([OK], 3, "fin"),
+        # Pas de relance sur un résultat vide : « aucun client ne correspond » est souvent la bonne réponse,
+        # et l'ancien agent poussait alors le modèle à inventer un filtre qui renvoie quelque chose.
+        ([VIDE], 3, "fin"),
+        ([KO], 3, "tenter"),
+        ([KO, KO], 3, "tenter"),
+        ([KO, KO, KO], 3, "fin"),  # budget épuisé : la 3e tentative ratée est la dernière
+        ([KO, OK], 3, "fin"),  # corrigée à la 2e
+        ([KO], 1, "fin"),  # max_tentatives=1 : pas de correction du tout (mode évaluation)
+    ],
+)
+def test_router(tentatives, max_tentatives, attendu):
+    assert router(tentatives, max_tentatives) == attendu
+
+
+# --- graphe -----------------------------------------------------------------
+
+
+class FauxBackend:
+    """Renvoie des réponses écrites à l'avance et garde les messages reçus, pour vérifier ce que le modèle a vu."""
+
+    def __init__(self, reponses):
+        self.reponses = list(reponses)
+        self.recus = []
+
+    def generate(self, messages):
+        self.recus.append(messages)
+        # IndexError si le graphe appelle le modèle plus souvent que prévu : le test échoue bruyamment.
+        return self.reponses.pop(0)
+
+
+def _lancer(backend, db_path, **options):
+    graphe = construire_graphe(backend, db_path, **options)
+    return graphe.invoke({"question": QUESTION, "schema": SCHEMA, "tentatives": []})
+
+
+def test_graphe_succes_du_premier_coup(db_path):
+    backend = FauxBackend(["SELECT COUNT(*) FROM clients;"])
+    etat = _lancer(backend, db_path)
+    assert len(etat["tentatives"]) == 1
+    assert etat["tentatives"][-1].resultat.lignes == [(3,)]
+    # Le seul appel est celui que l'évaluation a mesuré.
+    assert backend.recus == [build_messages(QUESTION, SCHEMA)]
+
+
+def test_graphe_corrige_apres_erreur(db_path):
+    backend = FauxBackend(["SELECT nom FROM clients;", "SELECT COUNT(*) FROM clients;"])
+    etat = _lancer(backend, db_path)
+    premiere, seconde = etat["tentatives"]
+    assert "no such column" in premiere.resultat.erreur
+    assert seconde.resultat.lignes == [(3,)]
+    # Le 2e appel contient bien le SQL fautif et l'erreur : c'est tout l'intérêt de la boucle.
+    assert backend.recus[1] == construire_messages(QUESTION, SCHEMA, [premiere])
+
+
+def test_graphe_s_arrete_apres_max_tentatives(db_path):
+    backend = FauxBackend(["SELECT nom FROM clients;"] * 5)
+    etat = _lancer(backend, db_path, max_tentatives=3)
+    assert len(backend.recus) == 3
+    assert len(etat["tentatives"]) == 3
+    assert etat["tentatives"][-1].resultat.erreur is not None
+
+
+def test_graphe_resultat_vide_sans_relance(db_path):
+    backend = FauxBackend(["SELECT * FROM clients WHERE region = 'Alsace';"])
+    etat = _lancer(backend, db_path)
+    assert len(backend.recus) == 1
+    assert etat["tentatives"][-1].resultat.lignes == []
+
+
+def test_graphe_transmet_max_lignes(db_path):
+    # Paramètre passé de construire_graphe jusqu'à execute_sql : s'il se perdait en route, rien ne planterait.
+    backend = FauxBackend(["SELECT * FROM clients;"])
+    etat = _lancer(backend, db_path, max_lignes=2)
+    assert etat["tentatives"][-1].resultat.tronque is True
+
+
+def test_graphe_erreur_backend_remonte(db_path):
+    # Un serveur éteint n'est pas une erreur SQL : la renvoyer au modèle n'aurait aucun sens.
+    class BackendEteint:
+        def generate(self, messages):
+            raise httpx.ConnectError("serveur injoignable")
+
+    with pytest.raises(httpx.ConnectError):
+        _lancer(BackendEteint(), db_path)
