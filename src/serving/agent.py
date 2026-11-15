@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal, TypedDict
 
-from src.text2sql.config import DB_PATH
+from src.text2sql.config import DB_PATH, LLAMA_SERVER_URL
 from src.text2sql.db import ResultatSQL, execute_sql, get_categorical_values, get_schema
 from src.text2sql.llm import Backend, LlamaServerBackend
 from src.text2sql.prompts import CORRECTION_TEMPLATE, build_messages, build_schema_context
@@ -123,7 +123,9 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="Pose une question à l'agent Text-to-SQL (llama-server doit tourner).")
     parser.add_argument("question")
-    parser.add_argument("--url", default="http://localhost:8080", help="adresse de llama-server")
+    parser.add_argument(
+        "--url", default=LLAMA_SERVER_URL, help="adresse de llama-server (défaut : $LLAMA_SERVER_URL, sinon localhost:8080)"
+    )
     parser.add_argument("--max-tentatives", type=int, default=3)
     parser.add_argument("--max-lignes", type=int, default=20, help="nombre maximal de lignes affichées")
     args = parser.parse_args()

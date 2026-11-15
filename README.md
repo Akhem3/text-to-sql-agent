@@ -101,7 +101,7 @@ Terminal 2, une fois `listening on http://127.0.0.1:8080` affiché :
 uv run python -m src.serving.agent "Quel est le solde moyen des comptes courants ?"
 ```
 
-Options : `--url` (défaut `http://localhost:8080`), `--max-tentatives` (défaut 3), `--max-lignes` (défaut 20).
+Options : `--url` (défaut : la variable d'environnement `LLAMA_SERVER_URL`, sinon `http://localhost:8080`), `--max-tentatives` (défaut 3), `--max-lignes` (défaut 20).
 
 ## Évaluation
 

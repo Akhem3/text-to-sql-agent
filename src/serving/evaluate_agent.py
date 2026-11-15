@@ -18,7 +18,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from src.serving.agent import construire_graphe
-from src.text2sql.config import DATASET_PATH, DB_PATH, RESULTS_DIR
+from src.text2sql.config import DATASET_PATH, DB_PATH, LLAMA_SERVER_URL, RESULTS_DIR
 from src.text2sql.db import get_categorical_values, get_schema, run_sql
 from src.text2sql.evaluate import METRIC_VERSION, ordre_impose, results_match
 from src.text2sql.llm import Backend
@@ -104,7 +104,9 @@ def resumer(df: pd.DataFrame) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--url", default="http://localhost:8080", help="adresse de llama-server")
+    parser.add_argument(
+        "--url", default=LLAMA_SERVER_URL, help="adresse de llama-server (défaut : $LLAMA_SERVER_URL, sinon localhost:8080)"
+    )
     parser.add_argument("--split", choices=["train", "validation", "test"], default="validation")
     parser.add_argument("--max-tentatives", type=int, default=3)
     parser.add_argument("--limit", type=int, default=None, help="n'évaluer que les N premiers exemples")

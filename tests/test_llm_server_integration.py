@@ -22,16 +22,15 @@ URL du serveur : variable d'environnement LLAMA_SERVER_URL (défaut http://local
 """
 
 import difflib
-import os
 
 import httpx
 import pytest
 
-from src.text2sql.config import DATASET_PATH, DB_PATH, DEFAULT_MODEL
+from src.text2sql.config import DATASET_PATH, DB_PATH, DEFAULT_MODEL, LLAMA_SERVER_URL
 from src.text2sql.db import get_categorical_values, get_schema
 from src.text2sql.prompts import build_messages, build_schema_context
 
-URL = os.environ.get("LLAMA_SERVER_URL", "http://localhost:8080")
+URL = LLAMA_SERVER_URL
 N_QUESTIONS = 3
 
 
