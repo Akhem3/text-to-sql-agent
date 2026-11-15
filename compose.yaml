@@ -1,0 +1,21 @@
+# Lancement de l'agent en conteneur ; llama-server tourne en natif sur l'hôte (Metal).
+# Usage : docker compose run --rm agent "Quels clients ont plus de 3 comptes ?"
+# Doc : https://docs.docker.com/reference/compose-file/services/
+
+services:
+  agent:
+    # Construit l'image depuis le Dockerfile du dossier, sous le même nom que le build manuel.
+    build: .
+    image: text2sql-agent
+
+    # Dans le conteneur, localhost désigne le conteneur lui-même : llama-server est sur l'hôte.
+    environment:
+      - LLAMA_SERVER_URL=http://host.docker.internal:8080
+
+    # Docker Desktop fournit déjà ce nom ; Docker sous Linux a besoin qu'on le déclare.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # Base montée plutôt que copiée (image plus légère, données hors image) ; :ro = lecture seule.
+    volumes:
+      - ./data/raw/banque_entreprise.db:/app/data/raw/banque_entreprise.db:ro
