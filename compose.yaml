@@ -1,5 +1,5 @@
 # Lancement de l'agent en conteneur ; llama-server tourne en natif sur l'hôte (Metal).
-# Usage : docker compose run --rm agent "Quels clients ont plus de 3 comptes ?"
+# Usage : docker compose run --rm agent "Quels clients ont plus de 3 abonnements ?"
 # Doc : https://docs.docker.com/reference/compose-file/services/
 
 services:

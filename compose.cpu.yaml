@@ -1,6 +1,6 @@
 # Variante portable : llama-server tourne aussi en conteneur, sur CPU (pas de Metal dans Docker).
 # Se combine avec compose.yaml, qu'il complète :
-#   docker compose -f compose.yaml -f compose.cpu.yaml run --rm agent "Quels clients ont plus de 3 comptes ?"
+#   docker compose -f compose.yaml -f compose.cpu.yaml run --rm agent "Quels clients ont plus de 3 abonnements ?"
 # --rm ne supprime que le conteneur de l'agent : llama-server reste démarré (~5 Go de RAM). Pour l'arrêter :
 #   docker compose -f compose.yaml -f compose.cpu.yaml down
 # Doc : https://docs.docker.com/compose/how-tos/multiple-compose-files/merge/
