@@ -177,7 +177,8 @@ def main() -> None:
     RESULTS_DIR.mkdir(exist_ok=True)
     df.to_json(RESULTS_DIR / f"{name}.jsonl", orient="records", lines=True, force_ascii=False)
     meta = {
-        "date": datetime.now().isoformat(timespec="seconds"),
+        # Heure locale avec son décalage (+01:00) : lisible et sans ambiguïté, même lue depuis un autre fuseau.
+        "date": datetime.now().astimezone().isoformat(timespec="seconds"),
         "backend": args.backend,
         "model": args.model,
         "adapter": args.adapter,
