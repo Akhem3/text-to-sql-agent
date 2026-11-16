@@ -1,6 +1,6 @@
 # Agent Text-to-SQL
 
-Agent qui traduit des questions métier en français en requêtes SQL sur une base SQLite, avec injection dynamique du schéma et boucle d'auto-correction. Le projet comprend aussi un benchmark maison et un fine-tuning QLoRA de Llama 3.1 8B, entraîné sur un Mac. *Projet personnel en cours : la mise en production reste à faire.*
+Agent qui traduit des questions métier en français en requêtes SQL sur une base SQLite, avec injection dynamique du schéma et boucle d'auto-correction. Le projet comprend aussi un benchmark maison et un fine-tuning QLoRA de Llama 3.1 8B, entraîné sur un Mac. *Projet personnel en cours : l'interface reste à faire.*
 
 ## Résultat principal
 
@@ -102,6 +102,61 @@ uv run python -m src.serving.agent "Quel est le solde moyen des comptes courants
 ```
 
 Options : `--url` (défaut : la variable d'environnement `LLAMA_SERVER_URL`, sinon `http://localhost:8080`), `--max-tentatives` (défaut 3), `--max-lignes` (défaut 20).
+
+## Lancer l'agent avec Docker
+
+L'agent est empaqueté dans une image Docker (`Dockerfile`, environ 350 Mo) qui ne contient que Python 3.13 et les dépendances de l'agent, sans torch ni MLX. Le modèle peut tourner à deux endroits :
+
+| Mode | llama-server | Fichiers Compose | Usage |
+|---|---|---|---|
+| Hybride | natif sur l'hôte, GPU Metal | `compose.yaml` | sur un Mac, pour la vitesse du GPU |
+| CPU | en conteneur, image officielle | `compose.yaml` + `compose.cpu.yaml` | sur toute machine avec Docker, sans GPU |
+
+Docker ne donne pas accès au GPU Metal du Mac : un llama-server en conteneur tourne donc sur CPU, d'où le mode hybride.
+
+Prérequis : Docker ([Docker Desktop](https://docs.docker.com/desktop/) sur Mac), la base `data/raw/banque_entreprise.db` (voir [Installation](#installation)) et le GGUF dans `models/gguf/`. La base et les poids ne sont pas copiés dans les images : ils sont montés en lecture seule au lancement.
+
+### Mode hybride
+
+Lancez llama-server comme dans la section précédente, puis :
+
+```bash
+docker compose run --rm agent "Quel est le solde moyen des comptes courants ?"
+```
+
+Dans un conteneur, `localhost` désigne le conteneur lui-même : l'agent joint le serveur de l'hôte via `host.docker.internal`. Sous Docker Desktop, un llama-server qui n'écoute que sur `127.0.0.1` reste joignable de cette façon. Sous Linux (non testé), `host.docker.internal` pointe vers l'interface du réseau Docker, et non vers `127.0.0.1` : llama-server doit alors écouter sur cette interface.
+
+### Mode CPU
+
+```bash
+docker compose -f compose.yaml -f compose.cpu.yaml run --rm agent "Quel est le solde moyen des comptes courants ?"
+
+# --rm ne supprime que le conteneur de l'agent : llama-server continue de tourner (~5 Go de RAM)
+docker compose -f compose.yaml -f compose.cpu.yaml down
+```
+
+`compose.cpu.yaml` complète `compose.yaml` : il ajoute un service llama-server et fait pointer l'agent vers lui. L'agent ne démarre qu'une fois le modèle chargé, grâce au healthcheck sur `/health`. La date du template est fixée comme en natif.
+
+L'image de llama-server est épinglée sur le build `server-b12110`, qui correspond au même commit que la version native (v0.9.0). Sur les 3 premières questions de validation, l'agent produit les mêmes requêtes qu'en mode Metal. Ce n'est pas garanti en général : le CPU et le GPU n'arrondissent pas les calculs de la même façon, et à température 0 un écart minime peut changer un token.
+
+### Latence
+
+Ordres de grandeur mesurés sur un Mac M5 (10 cœurs alloués à Docker) avec 3 questions de validation, en comptant toute la commande, création du conteneur comprise :
+
+| | Natif (Metal) | Hybride | CPU |
+|---|---|---|---|
+| Lecture du prompt | 449 tokens/s | 449 tokens/s | 60 tokens/s |
+| Génération | 26 tokens/s | 26 tokens/s | 18 tokens/s |
+| 1re question après démarrage | ~1,8 s | ~6 s | 15,5 s |
+| Questions suivantes | ~1,8 s | ~2,3 s | 3,4 à 3,8 s |
+
+Sur CPU, le coût vient surtout de la lecture du prompt. Chaque prompt compte environ 700 tokens, dont le schéma de la base, et la première lecture prend 12 s. llama-server garde ensuite en cache le calcul du début commun à toutes les questions (prompt système et schéma) et ne lit plus que la vingtaine de tokens de la question. Cela ne marche que parce que la question est placée à la fin du prompt : le cache s'arrête au premier token qui diffère.
+
+### Notes de déploiement
+
+- **Serveur x86** : une image construite sur un Mac Apple Silicon est en arm64. Pour un serveur x86, construisez avec `docker build --platform linux/amd64 -t text2sql-agent .`. L'image llama-server existe pour les deux architectures.
+- **Sécurité** : llama-server n'a ni clé API ni restriction CORS. En mode hybride, il n'écoute que sur `127.0.0.1`. En mode CPU, son port n'est pas publié sur l'hôte : seul l'agent le joint, par le réseau interne de Compose. Pour l'exposer, il faudrait au minimum `--api-key`.
+- **Amélioration possible** : un build en plusieurs étapes (multi-stage) allégerait l'image de l'agent en laissant uv et les fichiers de build hors de l'image finale.
 
 ## Évaluation
 
@@ -266,9 +321,9 @@ uv run python -m src.text2sql.analyse_finetuning
 - [x] Fine-tuning QLoRA
 - [x] Agent LangGraph avec boucle de correction, sur le modèle fine-tuné servi par llama.cpp
 - [x] Évaluation de l'agent complet
-- [ ] Mise en production (llama.cpp, Docker)
+- [x] Mise en production (llama.cpp, Docker)
 - [ ] Interface
 
 ## Stack
 
-Python · Llama 3.1 8B · MLX (mlx-lm) · llama.cpp · LangGraph · SQLite · uv
+Python · Llama 3.1 8B · MLX (mlx-lm) · llama.cpp · LangGraph · SQLite · uv · Docker
