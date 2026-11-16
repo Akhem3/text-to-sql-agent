@@ -10,7 +10,12 @@ Lancer depuis la racine du repo :
 import json
 
 import pytest
-import torch
+
+# torch et MLX sont dans le groupe `ml`, que la CI n'installe pas (plusieurs Go) : on ignore le fichier
+# au lieu de faire échouer toute la collecte.
+torch = pytest.importorskip("torch")
+pytest.importorskip("mlx.core")
+
 from safetensors.torch import save_file
 
 from src.finetuning.verifier_fusion import calculer_fusion, controler_fusion

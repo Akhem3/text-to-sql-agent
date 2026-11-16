@@ -4,6 +4,7 @@ Lancer depuis la racine du repo :
     uv run python -m pytest
 
 """
+
 import os
 import sqlite3
 import unicodedata
@@ -40,6 +41,7 @@ def distinct(conn, table, col):
 
 # --- Structure ---------------------------------------------------------------
 
+
 @pytest.mark.parametrize("table, cols", EXPECTED_COLUMNS.items())
 def test_colonnes_conformes_au_schema(conn, table, cols):
     found = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
@@ -57,23 +59,31 @@ def test_sqlite_supporte_les_fonctions_de_fenetre():
 
 # --- Intégrité référentielle -------------------------------------------------
 
+
 def test_pas_d_abonnement_orphelin(conn):
-    n = scalar(conn, """
+    n = scalar(
+        conn,
+        """
         SELECT COUNT(*) FROM abonnements a
         LEFT JOIN clients c ON a.client_id = c.client_id
-        WHERE c.client_id IS NULL""")
+        WHERE c.client_id IS NULL""",
+    )
     assert n == 0
 
 
 def test_pas_de_facture_orpheline(conn):
-    n = scalar(conn, """
+    n = scalar(
+        conn,
+        """
         SELECT COUNT(*) FROM factures f
         LEFT JOIN abonnements a ON f.abonnement_id = a.abonnement_id
-        WHERE a.abonnement_id IS NULL""")
+        WHERE a.abonnement_id IS NULL""",
+    )
     assert n == 0
 
 
 # --- Qualité des valeurs -----------------------------------------------------
+
 
 @pytest.mark.parametrize("table, col", [("clients", "date_inscription"), ("factures", "date_facturation")])
 def test_dates_au_format_iso(conn, table, col):
@@ -101,12 +111,15 @@ def test_statuts_de_paiement_attendus(conn):
 
 # Les requêtes du dataset comparent du texte avec accents ('Échouée', 'Côte d''Azur') :
 # si la base est en NFD alors que le dataset est en NFC, les filtres ne matchent jamais.
-@pytest.mark.parametrize("table, col", [
-    ("factures", "statut_paiement"),
-    ("clients", "region"),
-    ("clients", "segment"),
-    ("abonnements", "type_forfait"),
-])
+@pytest.mark.parametrize(
+    "table, col",
+    [
+        ("factures", "statut_paiement"),
+        ("clients", "region"),
+        ("clients", "segment"),
+        ("abonnements", "type_forfait"),
+    ],
+)
 def test_texte_normalise_nfc(conn, table, col):
     bad = [v for v in distinct(conn, table, col) if v and unicodedata.normalize("NFC", v) != v]
     assert not bad

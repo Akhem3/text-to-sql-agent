@@ -9,6 +9,9 @@ data/*
 !data/raw/
 data/raw/*
 !data/raw/*.md
+# Base synthétique (8 Mo) : celle de toutes les mesures du README. La versionner évite de la régénérer
+# (notebook + Faker, groupe ml) pour lancer l'agent ou les tests, en local comme en CI.
+!data/raw/banque_entreprise.db
 # Shots écrits à la main : ils définissent les ablations, à versionner avec les résultats.
 !data/shots/
 

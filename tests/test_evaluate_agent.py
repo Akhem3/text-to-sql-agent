@@ -24,7 +24,9 @@ def db_25_clients(tmp_path):
     path = tmp_path / "test.db"
     conn = sqlite3.connect(path)
     conn.execute("CREATE TABLE clients (client_id INTEGER PRIMARY KEY AUTOINCREMENT, region TEXT)")
-    conn.executemany("INSERT INTO clients (region) VALUES (?)", [("Corse" if i % 5 == 0 else "Bretagne",) for i in range(N_CLIENTS)])
+    conn.executemany(
+        "INSERT INTO clients (region) VALUES (?)", [("Corse" if i % 5 == 0 else "Bretagne",) for i in range(N_CLIENTS)]
+    )
     conn.commit()
     conn.close()
     return path

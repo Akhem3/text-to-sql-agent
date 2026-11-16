@@ -3753,7 +3753,7 @@ wheels = [
 name = "text-to-sql-agent"
 version = "0.1.0"
 source = { virtual = "." }
-default-groups = ["dev", "ml"]
+default-groups = ["dev", "eval", "ml"]
 dependencies = [
     { name = "httpx" },
     { name = "langgraph" },
@@ -3766,10 +3766,14 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
+eval = [
+    { name = "datasets" },
+    { name = "pandas" },
+    { name = "tqdm" },
+]
 ml = [
     { name = "accelerate" },
     { name = "chromadb" },
-    { name = "datasets" },
     { name = "faker" },
     { name = "gguf" },
     { name = "langchain" },
@@ -3799,10 +3803,14 @@ dev = [
     { name = "pytest", specifier = ">=9.1.1,<10.0.0" },
     { name = "ruff", specifier = ">=0.16.9,<0.17.0" },
 ]
+eval = [
+    { name = "datasets", specifier = ">=5.0.1,<6.0.0" },
+    { name = "pandas", specifier = ">=3.0.6,<4.0.0" },
+    { name = "tqdm", specifier = ">=4.70.1,<5.0.0" },
+]
 ml = [
     { name = "accelerate", specifier = ">=1.15.0,<2.0.0" },
     { name = "chromadb", specifier = ">=1.5.9,<2.0.0" },
-    { name = "datasets", specifier = ">=5.0.1,<6.0.0" },
     { name = "faker", specifier = ">=40.40.0,<41.0.0" },
     { name = "gguf", specifier = ">=0.19.0,<0.20.0" },
     { name = "langchain", specifier = ">=1.4.3,<2.0.0" },

@@ -41,4 +41,3 @@ def test_aucun_sql_commun_entre_splits(ds, a, b):
 def test_chaque_gold_renvoie_au_moins_une_ligne(ds, split):
     vides = [ex["question"] for ex in ds[split] if not run_sql(ex["sql"])]
     assert not vides, f"{len(vides)} requêtes de {split} renvoient 0 ligne : {vides}"
-

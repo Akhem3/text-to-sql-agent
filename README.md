@@ -1,5 +1,7 @@
 # Agent Text-to-SQL
 
+[![CI](https://github.com/Akhem3/text-to-sql-agent/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Akhem3/text-to-sql-agent/actions/workflows/ci.yml)
+
 Agent qui traduit des questions métier en français en requêtes SQL sur une base SQLite, avec injection dynamique du schéma et boucle d'auto-correction. Le projet comprend aussi un benchmark maison et un fine-tuning QLoRA de Llama 3.1 8B, entraîné sur un Mac. *Projet personnel en cours : l'interface reste à faire.*
 
 ## Résultat principal
@@ -68,7 +70,7 @@ Les poids de Llama 3.1 sont soumis à une licence : acceptez-la sur la [page du 
 uv run hf auth login
 ```
 
-Les questions du benchmark sont versionnées dans `data/raw/`, mais pas la base SQLite ni le dataset. Pour les générer, exécutez le notebook [`01_generation_bdd.ipynb`](notebooks/01_generation_bdd.ipynb), qui crée `data/raw/banque_entreprise.db`, puis lancez :
+La base SQLite (`data/raw/banque_entreprise.db`, 8 Mo de données synthétiques) et les questions du benchmark sont versionnées dans `data/raw/` : c'est la base de toutes les mesures de ce README. Le notebook [`01_generation_bdd.ipynb`](notebooks/01_generation_bdd.ipynb) montre comment elle a été générée ; le relancer l'écrase. Le dataset (splits train, validation et test) n'est pas versionné. Pour le générer :
 
 ```bash
 uv run python -m src.finetuning.build_dataset

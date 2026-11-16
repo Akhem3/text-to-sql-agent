@@ -27,10 +27,18 @@ from src.text2sql.sql_utils import extract_sql
 from tests.fakes import FauxBackend
 
 EXAMPLES = [
-    {"question": "Combien de clients ?", "sql": "SELECT COUNT(*) FROM clients;",
-     "famille": "comptage", "difficulte": "facile"},
-    {"question": "Quelles régions ?", "sql": "SELECT DISTINCT region FROM clients ORDER BY region;",
-     "famille": "distinct", "difficulte": "facile"},
+    {
+        "question": "Combien de clients ?",
+        "sql": "SELECT COUNT(*) FROM clients;",
+        "famille": "comptage",
+        "difficulte": "facile",
+    },
+    {
+        "question": "Quelles régions ?",
+        "sql": "SELECT DISTINCT region FROM clients ORDER BY region;",
+        "famille": "distinct",
+        "difficulte": "facile",
+    },
 ]
 
 
@@ -140,44 +148,55 @@ def test_results_match():
 GOLD_2COL = [("a", 1), ("b", 2)]
 
 
-@pytest.mark.parametrize("pred, gold, ordered, attendu_strict, attendu_relache", [
-    # Colonnes permutées : même réponse, autre ordre de SELECT.
-    ([(1, "a"), (2, "b")], GOLD_2COL, False, True, True),
-    ([(1, "a"), (2, "b")], GOLD_2COL, True, True, True),
-    ([(2, "b"), (1, "a")], GOLD_2COL, True, False, False),  # permutation OK mais lignes dans le mauvais ordre
-    # Mêmes valeurs par colonne mais lignes mal appariées : ne doit PAS passer.
-    ([(2, "a"), (1, "b")], GOLD_2COL, False, False, False),
-    # Colonnes en trop : refusées en strict, tolérées en relâché.
-    ([(10, "a", 1), (20, "b", 2)], GOLD_2COL, False, False, True),
-    # Colonne manquante : toujours faux.
-    ([("a",), ("b",)], GOLD_2COL, False, False, False),
-    # Colonnes en double : chaque colonne du gold doit avoir sa propre colonne dans la prédiction.
-    ([(1, 1)], [(1, 1)], False, True, True),
-    ([(1, 2)], [(1, 1)], False, False, False),
-    ([(1, 1, 2)], [(1, 2)], False, False, True),
-    # Arrondi des flottants conservé après permutation.
-    ([(1.00001, "x")], [("x", 1.0)], True, True, True),
-    # NULL SQL (None) mélangé à des nombres : le tri des colonnes ne doit pas planter (key=repr).
-    ([(None, "a"), (1, "b")], [("b", 1), ("a", None)], False, True, True),
-    # Nombre de lignes différent / résultats vides.
-    ([(1, "a")], GOLD_2COL, False, False, False),
-    ([], [], False, True, True),
-    ([], [(1,)], False, False, False),
-])
+@pytest.mark.parametrize(
+    "pred, gold, ordered, attendu_strict, attendu_relache",
+    [
+        # Colonnes permutées : même réponse, autre ordre de SELECT.
+        ([(1, "a"), (2, "b")], GOLD_2COL, False, True, True),
+        ([(1, "a"), (2, "b")], GOLD_2COL, True, True, True),
+        ([(2, "b"), (1, "a")], GOLD_2COL, True, False, False),  # permutation OK mais lignes dans le mauvais ordre
+        # Mêmes valeurs par colonne mais lignes mal appariées : ne doit PAS passer.
+        ([(2, "a"), (1, "b")], GOLD_2COL, False, False, False),
+        # Colonnes en trop : refusées en strict, tolérées en relâché.
+        ([(10, "a", 1), (20, "b", 2)], GOLD_2COL, False, False, True),
+        # Colonne manquante : toujours faux.
+        ([("a",), ("b",)], GOLD_2COL, False, False, False),
+        # Colonnes en double : chaque colonne du gold doit avoir sa propre colonne dans la prédiction.
+        ([(1, 1)], [(1, 1)], False, True, True),
+        ([(1, 2)], [(1, 1)], False, False, False),
+        ([(1, 1, 2)], [(1, 2)], False, False, True),
+        # Arrondi des flottants conservé après permutation.
+        ([(1.00001, "x")], [("x", 1.0)], True, True, True),
+        # NULL SQL (None) mélangé à des nombres : le tri des colonnes ne doit pas planter (key=repr).
+        ([(None, "a"), (1, "b")], [("b", 1), ("a", None)], False, True, True),
+        # Nombre de lignes différent / résultats vides.
+        ([(1, "a")], GOLD_2COL, False, False, False),
+        ([], [], False, True, True),
+        ([], [(1,)], False, False, False),
+    ],
+)
 def test_results_match_colonnes(pred, gold, ordered, attendu_strict, attendu_relache):
     assert results_match(pred, gold, ordered) == attendu_strict
     assert results_match(pred, gold, ordered, colonnes_en_trop=True) == attendu_relache
 
 
-@pytest.mark.parametrize("sql, attendu", [
-    ("SELECT region FROM clients;", False),
-    ("SELECT region FROM clients ORDER BY region;", True),
-    (("WITH r AS (SELECT region, ROW_NUMBER() OVER (PARTITION BY region ORDER BY client_id) AS rn "
-      "FROM clients) SELECT region FROM r WHERE rn = 1;"), False),
-    ("SELECT region FROM (SELECT region FROM clients ORDER BY region LIMIT 2);", False),
-    ("SELECT a FROM (SELECT b FROM (SELECT c) ORDER BY b);", False),
-    ("SELECT region FROM clients WHERE client_id IN (SELECT MAX(client_id) FROM clients) ORDER BY region;", True),
-])
+@pytest.mark.parametrize(
+    "sql, attendu",
+    [
+        ("SELECT region FROM clients;", False),
+        ("SELECT region FROM clients ORDER BY region;", True),
+        (
+            (
+                "WITH r AS (SELECT region, ROW_NUMBER() OVER (PARTITION BY region ORDER BY client_id) AS rn "
+                "FROM clients) SELECT region FROM r WHERE rn = 1;"
+            ),
+            False,
+        ),
+        ("SELECT region FROM (SELECT region FROM clients ORDER BY region LIMIT 2);", False),
+        ("SELECT a FROM (SELECT b FROM (SELECT c) ORDER BY b);", False),
+        ("SELECT region FROM clients WHERE client_id IN (SELECT MAX(client_id) FROM clients) ORDER BY region;", True),
+    ],
+)
 def test_ordre_impose(sql, attendu):
     assert ordre_impose(sql) == attendu
 
@@ -243,10 +262,12 @@ def test_evaluate_perfect_and_broken_backend(db_path):
     assert list(df["correct_relache"]) == [False, False]
 
     # Bonne réponse + une colonne en trop : fausse en strict, juste en relâché.
-    extra = FauxBackend([
-        "SELECT COUNT(*), 0 FROM clients;",
-        "SELECT region, COUNT(*) FROM clients GROUP BY region ORDER BY region;",
-    ])
+    extra = FauxBackend(
+        [
+            "SELECT COUNT(*), 0 FROM clients;",
+            "SELECT region, COUNT(*) FROM clients GROUP BY region ORDER BY region;",
+        ]
+    )
     df = evaluate(extra, EXAMPLES, schema, db_path=db_path)
     assert list(df["correct"]) == [False, False]
     assert list(df["correct_relache"]) == [True, True]

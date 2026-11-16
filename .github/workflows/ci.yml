@@ -1,0 +1,48 @@
+# Lint et tests à chaque push, sur un runner Linux neuf qui ne voit que les fichiers versionnés.
+# Doc : https://docs.github.com/fr/actions/writing-workflows/workflow-syntax-for-github-actions
+name: CI
+
+# push seul : le statut s'affiche aussi sur la PR (même commit). pull_request doublerait chaque run ;
+# il ne servirait qu'aux PR venant de forks.
+on: push
+
+# Moindre privilège : le workflow lit le dépôt et ne peut rien y écrire.
+permissions:
+  contents: read
+
+jobs:
+  lint-et-tests:
+    # Version épinglée : ubuntu-latest est un tag flottant, que GitHub fait passer à Ubuntu 26.
+    runs-on: ubuntu-24.04
+    # Garde-fou : un test bloqué ne consomme pas des heures de runner.
+    timeout-minutes: 10
+
+    steps:
+      # Actions épinglées sur un SHA de commit : un tag peut être déplacé, un SHA ne bouge pas.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          # Même uv qu'en local ; Python 3.13.9 est lu dans .python-version.
+          version: "0.13.6"
+          enable-cache: true
+
+      # Sans le groupe ml (torch, MLX : plusieurs Go) : la CI teste le code, pas les modèles.
+      # --locked : échoue si uv.lock ne correspond plus à pyproject.toml.
+      - name: Installer les dépendances
+        run: uv sync --locked --no-default-groups --group dev --group eval
+
+      # --no-sync partout : un `uv run` simple resynchroniserait les groupes par défaut, donc ml.
+      - name: Ruff (lint)
+        run: uv run --no-sync ruff check .
+
+      - name: Ruff (format)
+        run: uv run --no-sync ruff format --check .
+
+      # Le dataset n'est pas versionné ; sa génération est déterministe (vérifiée identique à l'original).
+      - name: Générer le dataset
+        run: uv run --no-sync python -m src.finetuning.build_dataset
+
+      # -rs affiche la raison de chaque test ignoré : un run vert qui ignore trop de tests ne prouve rien.
+      - name: Tests
+        run: uv run --no-sync pytest -rs

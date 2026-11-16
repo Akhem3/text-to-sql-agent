@@ -8,16 +8,23 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.13,<4.0.0"
 # Seulement ce que l'agent servi importe : c'est ce que l'image Docker installe
-# (`uv sync --no-default-groups`). Le reste (entraînement, évaluation HF/MLX, notebooks) est dans `ml`.
+# (`uv sync --no-default-groups`). Le benchmark est dans `eval`, les modèles (entraînement, inférence HF/MLX,
+# notebooks) dans `ml`.
 dependencies = [
     "httpx>=0.28.1,<0.29",
     "langgraph>=1.2.12,<2",
 ]
 
 [dependency-groups]
+# Ce que le benchmark et ses tests importent, sans aucun modèle : c'est ce que la CI installe.
+# pandas et tqdm sont importés directement par evaluate.py : on les déclare au lieu de compter sur datasets.
+eval = [
+    "datasets (>=5.0.1,<6.0.0)",
+    "pandas (>=3.0.6,<4.0.0)",
+    "tqdm (>=4.70.1,<5.0.0)",
+]
 ml = [
     "transformers (>=5.17.0,<6.0.0)",
-    "datasets (>=5.0.1,<6.0.0)",
     "peft (>=0.21.1,<0.22.0)",
     "trl (>=1.14.1,<2.0.0)",
     "torch (>=2.14.0,<3.0.0)",
@@ -46,7 +53,7 @@ dev = [
 [tool.uv]
 package = false
 # En local, `uv sync` installe tout, comme avant la séparation ; l'image s'en passe avec --no-default-groups.
-default-groups = ["dev", "ml"]
+default-groups = ["dev", "eval", "ml"]
 
 # Rend `from src...` importable quelle que soit la commande (`pytest` seul n'ajoute que tests/).
 [tool.pytest.ini_options]

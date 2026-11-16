@@ -12,17 +12,23 @@ from pathlib import Path
 PROMPT_VERSION = "v2"
 
 # Une règle par type d'erreur observé sur la baseline v1 : on pourra mesurer l'effet de chacune
-# en comptant son erreur cible avant / après. 
+# en comptant son erreur cible avant / après.
+# Parenthèses autour des règles sur plusieurs lignes : dans un tuple, une virgule oubliée fusionnerait
+# deux règles en silence ; ici, la fusion des morceaux d'une même règle est voulue et visible.
 REGLES = (
     # Requêtes invalides : EXTRACT(YEAR FROM ...) n'existe pas en SQLite.
-    "Les dates sont du texte au format 'YYYY-MM-DD'. Utilise strftime, par exemple "
-    "strftime('%Y', date_inscription) = '2025' ou strftime('%Y-%m', date_facturation) = '2025-03'. "
-    "EXTRACT, YEAR() et MONTH() n'existent pas en SQLite.",
+    (
+        "Les dates sont du texte au format 'YYYY-MM-DD'. Utilise strftime, par exemple "
+        "strftime('%Y', date_inscription) = '2025' ou strftime('%Y-%m', date_facturation) = '2025-03'. "
+        "EXTRACT, YEAR() et MONTH() n'existent pas en SQLite."
+    ),
     # 15 des 18 réponses justes seulement en EX relâchée étaient des SELECT *.
     "Sélectionne uniquement les colonnes qui répondent à la question. N'utilise jamais SELECT *.",
     # 7 échecs avec des valeurs mal écrites ('payée' au lieu de 'Payée').
-    "Pour filtrer une colonne listée dans « Valeurs possibles », recopie l'une de ces valeurs "
-    "exactement, majuscules et accents compris.",
+    (
+        "Pour filtrer une colonne listée dans « Valeurs possibles », recopie l'une de ces valeurs "
+        "exactement, majuscules et accents compris."
+    ),
     "Les booléens valent 0 ou 1 : un abonnement actif a statut_actif = 1.",
 )
 
