@@ -1,5 +1,7 @@
 # Agent Text-to-SQL
 
+[![CI](https://github.com/Akhem3/text-to-sql-agent/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Akhem3/text-to-sql-agent/actions/workflows/ci.yml)
+
 Agent qui traduit des questions métier en français en requêtes SQL sur une base SQLite, avec injection dynamique du schéma et boucle d'auto-correction. Le projet comprend aussi un benchmark maison et un fine-tuning QLoRA de Llama 3.1 8B, entraîné sur un Mac. *Projet personnel en cours : l'interface reste à faire.*
 
 ## Résultat principal

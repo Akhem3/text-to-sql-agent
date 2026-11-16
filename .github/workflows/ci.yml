@@ -12,7 +12,8 @@ permissions:
 
 jobs:
   lint-et-tests:
-    runs-on: ubuntu-latest
+    # Version épinglée : ubuntu-latest est un tag flottant, que GitHub fait passer à Ubuntu 26.
+    runs-on: ubuntu-24.04
     # Garde-fou : un test bloqué ne consomme pas des heures de runner.
     timeout-minutes: 10
 
