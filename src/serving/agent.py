@@ -124,7 +124,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Pose une question à l'agent Text-to-SQL (llama-server doit tourner).")
     parser.add_argument("question")
     parser.add_argument(
-        "--url", default=LLAMA_SERVER_URL, help="adresse de llama-server (défaut : $LLAMA_SERVER_URL, sinon localhost:8080)"
+        "--url",
+        default=LLAMA_SERVER_URL,
+        help="adresse de llama-server (défaut : $LLAMA_SERVER_URL, sinon localhost:8080)",
     )
     parser.add_argument("--max-tentatives", type=int, default=3)
     parser.add_argument("--max-lignes", type=int, default=20, help="nombre maximal de lignes affichées")

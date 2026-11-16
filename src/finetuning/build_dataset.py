@@ -25,7 +25,8 @@ FAMILLE_MAP = {
     "Top-N par groupe (CTE + ROW_NUMBER)": "Top-N par groupe",
 }
 
-#Correction de cas
+
+# Correction de cas
 def clean_sql(sql: str) -> str:
     return sql.replace("\\n", "\n").replace("\\t", "\t").strip()
 
@@ -33,6 +34,7 @@ def clean_sql(sql: str) -> str:
 def normaliser_sql(sql: str) -> str:
     """Clé de comparaison : deux requêtes qui ne diffèrent que par la casse ou les blancs sont identiques."""
     return " ".join(sql.lower().split())
+
 
 SQL_OVERRIDES = {
     "Quelles factures payées sont supérieures au montant moyen facturé pour leur forfait ?": """
@@ -64,6 +66,7 @@ ORDER BY f1.montant_paye DESC
 LIMIT 5;""",
 }
 
+
 def read_jsonl_md(path: Path) -> list[dict]:
     """Lit un fichier .md contenant un objet JSON par ligne."""
     rows = []
@@ -84,9 +87,7 @@ def read_jsonl_md(path: Path) -> list[dict]:
             row["sql"] = SQL_OVERRIDES.get(row["question"], clean_sql(row["sql"]))
             rows.append(row)
         except json.JSONDecodeError as e:
-            raise ValueError(
-                f"{path.name}:{i} JSON invalide : {e}"
-            ) from e
+            raise ValueError(f"{path.name}:{i} JSON invalide : {e}") from e
 
     return rows
 
@@ -116,7 +117,7 @@ def split_par_groupe(pool: list[dict], n_valid: int, seed: int) -> tuple[list[di
         rng.shuffle(paquets)
         n_famille = sum(len(p) for p in paquets)
         quota = round(n_valid * n_famille / len(pool))  # part de la famille dans la validation
-        compteur = 0 
+        compteur = 0
         for paquet in paquets:
             if compteur < quota:
                 validation.extend(paquet)
@@ -146,7 +147,7 @@ def build() -> DatasetDict:
         if path.name == TEST_FILE:
             test.extend(rows)
         elif path.name == REPLACE_FILE:
-            replacement.extend(rows)      # jamais dans le pool
+            replacement.extend(rows)  # jamais dans le pool
         else:
             pool.extend(rows)
 
@@ -160,8 +161,7 @@ def build() -> DatasetDict:
 
     if n_removed != len(replacement):
         raise ValueError(
-            f"{n_removed} cas retirés du test, {len(replacement)} de remplacement : "
-            "les nombres doivent être égaux"
+            f"{n_removed} cas retirés du test, {len(replacement)} de remplacement : les nombres doivent être égaux"
         )
 
     # Les familles de remplacement doivent exister dans le train
@@ -185,19 +185,14 @@ def build() -> DatasetDict:
 
     if len(pool) <= N_VALID:
         raise ValueError(
-            f"Pas assez d'exemples pour créer la validation : "
-            f"{len(pool)} disponibles, {N_VALID} demandés."
+            f"Pas assez d'exemples pour créer la validation : {len(pool)} disponibles, {N_VALID} demandés."
         )
-    
+
     test_q = {r["question"].strip().lower() for r in test}
     test_sql = {normaliser_sql(r["sql"]) for r in test}
 
-    overlap = [
-        r for r in pool
-        if r["question"].strip().lower() in test_q
-        or normaliser_sql(r["sql"]) in test_sql
-    ]
-    #Gestion des doublons dans le pool vs test
+    overlap = [r for r in pool if r["question"].strip().lower() in test_q or normaliser_sql(r["sql"]) in test_sql]
+    # Gestion des doublons dans le pool vs test
     if overlap:
         print(f"⚠ {len(overlap)} exemples retirés du pool (déjà présents dans le test) :")
         for r in overlap:

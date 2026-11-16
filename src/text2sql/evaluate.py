@@ -79,7 +79,7 @@ def results_match(pred, gold, ordered: bool, colonnes_en_trop: bool = False) -> 
 
     pred_sorted = [_valeurs_triees(pred, j) for j in range(n)]
     gold_sorted = [_valeurs_triees(gold, j) for j in range(k)]
-    
+
     # Filtre rapide : deux colonnes associées doivent avoir les mêmes valeurs triées. Nécessaire mais
     # pas suffisant, car trier chaque colonne séparément perd l'appariement des valeurs entre colonnes ;
     # d'où la vérification complète sur les lignes pour les hypothèses qui passent le filtre.
@@ -92,7 +92,9 @@ def results_match(pred, gold, ordered: bool, colonnes_en_trop: bool = False) -> 
     return False
 
 
-def evaluate(backend, examples, schema: str, shots=(), db_path: Path = DB_PATH, limit: int | None = None) -> pd.DataFrame:
+def evaluate(
+    backend, examples, schema: str, shots=(), db_path: Path = DB_PATH, limit: int | None = None
+) -> pd.DataFrame:
     """Génère, exécute et compare. Une ligne par exemple, sortie brute du modèle conservée."""
     records = []
     for ex in tqdm(list(examples)[:limit], desc="évaluation"):
@@ -107,18 +109,22 @@ def evaluate(backend, examples, schema: str, shots=(), db_path: Path = DB_PATH, 
             raise ValueError(f"Gold SQL invalide, à corriger dans le dataset : {ex['question']!r}")
         ordered = ordre_impose(ex["sql"])
 
-        records.append({
-            "question": ex["question"],
-            "famille": ex["famille"],
-            "difficulte": ex["difficulte"],
-            "raw_output": raw_output,
-            "pred_sql": pred_sql,
-            "gold_sql": ex["sql"],
-            "valide": pred is not None,
-            "correct": results_match(pred, gold, ordered),
-            "correct_relache": results_match(pred, gold, ordered, colonnes_en_trop=True), # Métrique secondaire : tolère des colonnes en trop, pour mesurer l'écart dû au seul SELECT.
-            "latence_s": round(latency, 2),
-        })
+        records.append(
+            {
+                "question": ex["question"],
+                "famille": ex["famille"],
+                "difficulte": ex["difficulte"],
+                "raw_output": raw_output,
+                "pred_sql": pred_sql,
+                "gold_sql": ex["sql"],
+                "valide": pred is not None,
+                "correct": results_match(pred, gold, ordered),
+                "correct_relache": results_match(
+                    pred, gold, ordered, colonnes_en_trop=True
+                ),  # Métrique secondaire : tolère des colonnes en trop, pour mesurer l'écart dû au seul SELECT.
+                "latence_s": round(latency, 2),
+            }
+        )
     return pd.DataFrame(records)
 
 
@@ -144,7 +150,9 @@ def main() -> None:
     # Exclusifs : un run doit avoir une seule origine de shots, sinon le meta devient ambigu.
     source_shots = parser.add_mutually_exclusive_group()
     source_shots.add_argument("--shots", type=int, default=0, help="nombre d'exemples few-shot tirés du train")
-    source_shots.add_argument("--shots-file", default=None, help="shots écrits à la main (JSON : liste de {question, sql})")
+    source_shots.add_argument(
+        "--shots-file", default=None, help="shots écrits à la main (JSON : liste de {question, sql})"
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--limit", type=int, default=None, help="n'évaluer que les N premiers exemples")
     parser.add_argument("--name", default=None, help="nom du run (fichiers de résultats)")

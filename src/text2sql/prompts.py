@@ -12,7 +12,7 @@ from pathlib import Path
 PROMPT_VERSION = "v2"
 
 # Une règle par type d'erreur observé sur la baseline v1 : on pourra mesurer l'effet de chacune
-# en comptant son erreur cible avant / après. 
+# en comptant son erreur cible avant / après.
 REGLES = (
     # Requêtes invalides : EXTRACT(YEAR FROM ...) n'existe pas en SQLite.
     "Les dates sont du texte au format 'YYYY-MM-DD'. Utilise strftime, par exemple "

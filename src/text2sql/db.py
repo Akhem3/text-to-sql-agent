@@ -17,10 +17,7 @@ def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
 
 def get_schema(db_path: Path = DB_PATH) -> str:
     """Instructions CREATE TABLE de la base, sans les tables internes de SQLite."""
-    query = (
-        "SELECT sql FROM sqlite_master "
-        "WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-    )
+    query = "SELECT sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
     with closing(connect(db_path)) as conn:
         return "\n".join(row[0] for row in conn.execute(query))
 
@@ -31,10 +28,7 @@ def get_categorical_values(db_path: Path = DB_PATH, max_distinct: int = 40) -> d
     Catégorielle = type TEXT ou BOOLEAN et au plus `max_distinct` valeurs distinctes (hors NULL).
     Les valeurs sont triées pour que le prompt soit identique d'un run à l'autre.
     """
-    tables_query = (
-        "SELECT name FROM sqlite_master "
-        "WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-    )
+    tables_query = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
     colonnes_query = "SELECT name FROM pragma_table_info(?) WHERE type IN ('TEXT', 'BOOLEAN')"
     valeurs = {}
     with closing(connect(db_path)) as conn:
@@ -45,10 +39,7 @@ def get_categorical_values(db_path: Path = DB_PATH, max_distinct: int = 40) -> d
                 # Identifiants (et non valeurs) : f-string obligatoire, entre guillemets doubles.
                 n = conn.execute(f'SELECT COUNT(DISTINCT "{col}") FROM "{table}"').fetchone()[0]
                 if n <= max_distinct:
-                    query = (
-                        f'SELECT DISTINCT "{col}" FROM "{table}" '
-                        f'WHERE "{col}" IS NOT NULL ORDER BY "{col}"'
-                    )
+                    query = f'SELECT DISTINCT "{col}" FROM "{table}" WHERE "{col}" IS NOT NULL ORDER BY "{col}"'
                     valeurs[f"{table}.{col}"] = [row[0] for row in conn.execute(query)]
     return valeurs
 

@@ -65,24 +65,26 @@ def evaluer_agent(
         tentatives = etat["tentatives"]
         premiere, finale = tentatives[0].resultat, tentatives[-1].resultat
 
-        records.append({
-            "question": ex["question"],
-            "famille": ex["famille"],
-            "difficulte": ex["difficulte"],
-            "gold_sql": ex["sql"],
-            # Listes alignées (une entrée par tentative) : de quoi rejouer l'analyse sans relancer le modèle.
-            "sql_tentatives": [t.sql for t in tentatives],
-            "erreurs_tentatives": [t.resultat.erreur for t in tentatives],
-            "n_tentatives": len(tentatives),
-            "repetitions": marquer_repetitions([t.sql for t in tentatives]),
-            "valide_t1": premiere.erreur is None,
-            "valide": finale.erreur is None,
-            # correct_t1 doit retrouver le run evaluate.py du même GGUF : c'est le contrôle de déterminisme.
-            "correct_t1": results_match(premiere.lignes, gold, ordered),
-            "correct": results_match(finale.lignes, gold, ordered),
-            "correct_relache": results_match(finale.lignes, gold, ordered, colonnes_en_trop=True),
-            "latence_s": round(latence, 2),
-        })
+        records.append(
+            {
+                "question": ex["question"],
+                "famille": ex["famille"],
+                "difficulte": ex["difficulte"],
+                "gold_sql": ex["sql"],
+                # Listes alignées (une entrée par tentative) : de quoi rejouer l'analyse sans relancer le modèle.
+                "sql_tentatives": [t.sql for t in tentatives],
+                "erreurs_tentatives": [t.resultat.erreur for t in tentatives],
+                "n_tentatives": len(tentatives),
+                "repetitions": marquer_repetitions([t.sql for t in tentatives]),
+                "valide_t1": premiere.erreur is None,
+                "valide": finale.erreur is None,
+                # correct_t1 doit retrouver le run evaluate.py du même GGUF : c'est le contrôle de déterminisme.
+                "correct_t1": results_match(premiere.lignes, gold, ordered),
+                "correct": results_match(finale.lignes, gold, ordered),
+                "correct_relache": results_match(finale.lignes, gold, ordered, colonnes_en_trop=True),
+                "latence_s": round(latence, 2),
+            }
+        )
     return pd.DataFrame(records)
 
 
@@ -105,7 +107,9 @@ def resumer(df: pd.DataFrame) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
-        "--url", default=LLAMA_SERVER_URL, help="adresse de llama-server (défaut : $LLAMA_SERVER_URL, sinon localhost:8080)"
+        "--url",
+        default=LLAMA_SERVER_URL,
+        help="adresse de llama-server (défaut : $LLAMA_SERVER_URL, sinon localhost:8080)",
     )
     parser.add_argument("--split", choices=["train", "validation", "test"], default="validation")
     parser.add_argument("--max-tentatives", type=int, default=3)

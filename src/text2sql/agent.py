@@ -53,13 +53,13 @@ def make_llm(max_new_tokens: int = 512, stream: bool = False) -> RunnableLambda:
                 streamer=streamer,
                 pad_token_id=tokenizer.eos_token_id,
             )
-        new_tokens = output[0, inputs["input_ids"].shape[1]:]
+        new_tokens = output[0, inputs["input_ids"].shape[1] :]
         return tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
     return RunnableLambda(_generate)
 
 
-llm_sql = make_llm(max_new_tokens=512)                   # silencieux
+llm_sql = make_llm(max_new_tokens=512)  # silencieux
 llm_synthese = make_llm(max_new_tokens=512, stream=True)  # streamé uniquement ici
 
 # ---------------------------------------------------------------------------
@@ -100,45 +100,59 @@ def validate_readonly(sql: str) -> None:
 # ---------------------------------------------------------------------------
 # 3. Prompts (format chat, sans tokens spéciaux)
 # ---------------------------------------------------------------------------
-PROMPT_INITIAL = ChatPromptTemplate.from_messages([
-    ("system",
-     "Tu es un expert SQL de niveau Senior. Génère uniquement une requête SQL valide, "  # noqa: ISC004
-     "sans explication ni Markdown.\n"
-     "Schéma de la base de données :\n{table_info}\n\n"
-     "RÈGLE D'OR : pour les questions de type « Top N par catégorie », utilise des "
-     "fonctions de fenêtrage avec PARTITION BY.\n"
-     "Exemple :\n"
-     "Question : Quels sont les 3 employés les mieux payés par département ?\n"
-     "Requête : WITH Ranked AS (SELECT nom, departement, salaire, "
-     "ROW_NUMBER() OVER(PARTITION BY departement ORDER BY salaire DESC) AS rn "
-     "FROM employes) SELECT nom, departement, salaire FROM Ranked WHERE rn <= 3;"),
-    ("human", "Question : {question}"),
-])
+PROMPT_INITIAL = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            "Tu es un expert SQL de niveau Senior. Génère uniquement une requête SQL valide, "  # noqa: ISC004
+            "sans explication ni Markdown.\n"
+            "Schéma de la base de données :\n{table_info}\n\n"
+            "RÈGLE D'OR : pour les questions de type « Top N par catégorie », utilise des "
+            "fonctions de fenêtrage avec PARTITION BY.\n"
+            "Exemple :\n"
+            "Question : Quels sont les 3 employés les mieux payés par département ?\n"
+            "Requête : WITH Ranked AS (SELECT nom, departement, salaire, "
+            "ROW_NUMBER() OVER(PARTITION BY departement ORDER BY salaire DESC) AS rn "
+            "FROM employes) SELECT nom, departement, salaire FROM Ranked WHERE rn <= 3;",
+        ),
+        ("human", "Question : {question}"),
+    ]
+)
 
-PROMPT_CORRECTION = ChatPromptTemplate.from_messages([
-    ("system",
-     "Tu es un expert SQL. Ta requête précédente a échoué. Analyse le problème et "  # noqa: ISC004
-     "corrige la requête.\n"
-     "RÈGLE CRITIQUE : si une colonne utilise la mauvaise table ou le mauvais alias "
-     "(ex : T2 au lieu de T3), applique la correction dans TOUTES les clauses "
-     "(SELECT, WHERE, GROUP BY, ORDER BY...).\n"
-     "Ne génère que la requête SQL corrigée, sans explication.\n"
-     "Schéma de la base de données :\n{table_info}"),
-    ("human",
-     "Question initiale : {question}\n"  # noqa: ISC004
-     "Requête erronée : {bad_query}\n"
-     "Problème rencontré : {error_message}\n\n"
-     "Requête SQL corrigée :"),
-])
+PROMPT_CORRECTION = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            "Tu es un expert SQL. Ta requête précédente a échoué. Analyse le problème et "  # noqa: ISC004
+            "corrige la requête.\n"
+            "RÈGLE CRITIQUE : si une colonne utilise la mauvaise table ou le mauvais alias "
+            "(ex : T2 au lieu de T3), applique la correction dans TOUTES les clauses "
+            "(SELECT, WHERE, GROUP BY, ORDER BY...).\n"
+            "Ne génère que la requête SQL corrigée, sans explication.\n"
+            "Schéma de la base de données :\n{table_info}",
+        ),
+        (
+            "human",
+            "Question initiale : {question}\n"  # noqa: ISC004
+            "Requête erronée : {bad_query}\n"
+            "Problème rencontré : {error_message}\n\n"
+            "Requête SQL corrigée :",
+        ),
+    ]
+)
 
-PROMPT_SYNTHESE = ChatPromptTemplate.from_messages([
-    ("system",
-     "Tu es un analyste de données expert. Formule une réponse claire et professionnelle, "  # noqa: ISC004
-     "en phrases naturelles. Ne montre JAMAIS de code Python ni de tuples. "
-     "Formate les montants en euros.\n"
-     "Données brutes : {resultats_sql}"),
-    ("human", "Question : {question}"),
-])
+PROMPT_SYNTHESE = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            "Tu es un analyste de données expert. Formule une réponse claire et professionnelle, "  # noqa: ISC004
+            "en phrases naturelles. Ne montre JAMAIS de code Python ni de tuples. "
+            "Formate les montants en euros.\n"
+            "Données brutes : {resultats_sql}",
+        ),
+        ("human", "Question : {question}"),
+    ]
+)
 
 # ---------------------------------------------------------------------------
 # 4. Chaînes LCEL (définies une seule fois)
@@ -180,9 +194,7 @@ def run_sql_agent(question: str, max_iterations: int = MAX_ITERATIONS) -> AgentR
             if attempt == max_iterations:
                 print("⚠️ Nombre maximum de tentatives atteint.")
                 return None
-            sql = chain_correction.invoke(
-                {"question": question, "bad_query": sql, "error_message": str(e)}
-            )
+            sql = chain_correction.invoke({"question": question, "bad_query": sql, "error_message": str(e)})
     return None
 
 
