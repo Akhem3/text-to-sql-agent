@@ -7,7 +7,15 @@ authors = [
 ]
 readme = "README.md"
 requires-python = ">=3.13,<4.0.0"
+# Seulement ce que l'agent servi importe : c'est ce que l'image Docker installe
+# (`uv sync --no-default-groups`). Le reste (entraînement, évaluation HF/MLX, notebooks) est dans `ml`.
 dependencies = [
+    "httpx>=0.28.1,<0.29",
+    "langgraph>=1.2.12,<2",
+]
+
+[dependency-groups]
+ml = [
     "transformers (>=5.17.0,<6.0.0)",
     "datasets (>=5.0.1,<6.0.0)",
     "peft (>=0.21.1,<0.22.0)",
@@ -24,11 +32,8 @@ dependencies = [
     "sentencepiece (>=0.2.2,<0.3.0)",
     "tiktoken (>=0.14.0,<0.15.0)",
     "gguf (>=0.19.0,<0.20.0)",
-    "llama-cpp-python (>=0.3.36,<0.4.0)",
     "mlx-lm>=0.32.2,<0.33.0",
 ]
-
-[dependency-groups]
 dev = [
     "ruff (>=0.16.9,<0.17.0)",
     "pytest (>=9.1.1,<10.0.0)",
@@ -40,6 +45,8 @@ dev = [
 # uv ne doit donc pas construire le projet, et aucun [build-system] n'est nécessaire.
 [tool.uv]
 package = false
+# En local, `uv sync` installe tout, comme avant la séparation ; l'image s'en passe avec --no-default-groups.
+default-groups = ["dev", "ml"]
 
 # Rend `from src...` importable quelle que soit la commande (`pytest` seul n'ajoute que tests/).
 [tool.pytest.ini_options]

@@ -1,0 +1,15 @@
+# Liste blanche : tout est exclu du contexte de build, sauf ce que l'image utilise.
+# Un oubli fait échouer le build (fichier manquant) au lieu d'envoyer en silence models/ (9 Go),
+# data/ ou .env (token Hugging Face) au démon Docker, voire dans une couche de l'image.
+*
+
+# Dépendances : copiées avant le code, pour garder la couche `uv sync` en cache quand seul le code change.
+!pyproject.toml
+!uv.lock
+!.python-version
+
+# Code de l'agent. La base SQLite n'est pas copiée : Compose la monte en lecture seule.
+!src/
+
+# Exceptions dans ce qui est autorisé : caches Python générés en local.
+**/__pycache__

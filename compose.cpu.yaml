@@ -1,0 +1,48 @@
+# Variante portable : llama-server tourne aussi en conteneur, sur CPU (pas de Metal dans Docker).
+# Se combine avec compose.yaml, qu'il complète :
+#   docker compose -f compose.yaml -f compose.cpu.yaml run --rm agent "Quels clients ont plus de 3 comptes ?"
+# --rm ne supprime que le conteneur de l'agent : llama-server reste démarré (~5 Go de RAM). Pour l'arrêter :
+#   docker compose -f compose.yaml -f compose.cpu.yaml down
+# Doc : https://docs.docker.com/compose/how-tos/multiple-compose-files/merge/
+
+services:
+  agent:
+    # Dans ce mode, llama-server est un service voisin : on l'appelle par son nom sur le réseau Compose.
+    environment:
+      - LLAMA_SERVER_URL=http://llama-server:8080
+
+    # run démarre llama-server et attend qu'il soit prêt (/health = 200) avant de lancer l'agent.
+    depends_on:
+      llama-server:
+        condition: service_healthy
+
+  llama-server:
+    # Tag épinglé : b12110 = commit cd959ba, le même que le llama.cpp v0.9.0 natif.
+    # Le tag flottant « server » changerait de version sous nos pieds.
+    image: ghcr.io/ggml-org/llama.cpp:server-b12110
+
+    # Poids montés plutôt que copiés dans une image (4,6 Go, licence Llama) ; :ro = lecture seule.
+    volumes:
+      - ./models/gguf:/models:ro
+
+    # L'image a déjà ENTRYPOINT llama-server, LLAMA_ARG_HOST=0.0.0.0 et LLAMA_ARG_PORT=8080 :
+    # on ne passe que les arguments. Pas de -ngl : aucun GPU n'est visible depuis le conteneur.
+    # La date est fixée comme en natif : sinon le serveur injecte la date du jour dans le prompt,
+    # qui diffère alors de celui vu à l'entraînement et à l'évaluation.
+    command:
+      - "-m"
+      - "/models/llama31-lora-v1-iter440-Q4_K_M.gguf"
+      - "-c"
+      - "4096"
+      - "--chat-template-kwargs"
+      - '{"date_string": "26 Jul 2024"}'
+
+    # /health renvoie 503 tant que le modèle charge, puis 200 : « healthy » veut dire « prêt à répondre ».
+    # L'image vérifie toutes les 30 s, ce qui ferait attendre l'agent jusqu'à 30 s de trop.
+    # start_period : les échecs pendant le chargement (lent sur CPU) ne comptent pas.
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 120s

@@ -20,26 +20,11 @@ import sqlite3
 
 import pytest
 
-from src.text2sql.db import get_categorical_values, get_schema, run_sql
+from src.text2sql.db import execute_sql, get_categorical_values, get_schema, run_sql
 from src.text2sql.evaluate import evaluate, ordre_impose, results_match
 from src.text2sql.prompts import build_messages, build_schema_context, load_shots, pick_shots, to_sft_record
 from src.text2sql.sql_utils import extract_sql
-
-
-@pytest.fixture()
-def db_path(tmp_path):
-    path = tmp_path / "test.db"
-    conn = sqlite3.connect(path)
-    conn.executescript(
-        """
-        CREATE TABLE clients (client_id INTEGER PRIMARY KEY AUTOINCREMENT, region TEXT);
-        INSERT INTO clients (region) VALUES ('Bretagne'), ('Corse'), ('Corse');
-        """
-    )
-    conn.commit()
-    conn.close()
-    return path
-
+from tests.fakes import FauxBackend
 
 EXAMPLES = [
     {"question": "Combien de clients ?", "sql": "SELECT COUNT(*) FROM clients;",
@@ -47,14 +32,6 @@ EXAMPLES = [
     {"question": "Quelles régions ?", "sql": "SELECT DISTINCT region FROM clients ORDER BY region;",
      "famille": "distinct", "difficulte": "facile"},
 ]
-
-
-class FakeBackend:
-    def __init__(self, answers):
-        self.answers = list(answers)
-
-    def generate(self, messages):
-        return self.answers.pop(0)
 
 
 def test_extract_sql():
@@ -103,6 +80,54 @@ def test_run_sql_ok_error_and_readonly(db_path):
 def test_run_sql_timeout(db_path):
     slow = "WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r) SELECT COUNT(*) FROM r"
     assert run_sql(slow, db_path, timeout_s=0.2) is None
+
+
+def test_execute_sql_ok(db_path):
+    res = execute_sql("SELECT client_id, region FROM clients ORDER BY client_id", db_path)
+    assert res.lignes == [(1, "Bretagne"), (2, "Corse"), (3, "Corse")]
+    assert res.colonnes == ["client_id", "region"]
+    assert res.erreur is None
+    assert res.tronque is False
+
+
+@pytest.mark.parametrize(
+    ("sql", "fragment"),
+    [
+        ("SELECT * FROM table_inconnue", "no such table"),
+        # La lecture seule vient de SQLite lui-même, pas d'un filtre sur le texte de la requête.
+        ("DELETE FROM clients", "readonly"),
+        # sqlite3 refuse plusieurs instructions par execute() : pas d'injection « SELECT ...; DROP ... ».
+        ("SELECT 1; DROP TABLE clients", "one statement"),
+    ],
+)
+def test_execute_sql_erreur_conserve_le_message(db_path, sql, fragment):
+    # L'agent renvoie ce message au modèle pour qu'il corrige : il doit arriver intact.
+    res = execute_sql(sql, db_path)
+    assert res.lignes is None
+    assert fragment in res.erreur
+
+
+def test_execute_sql_timeout_message_explicite(db_path):
+    # SQLite ne dit que « interrupted » : inutile au modèle, qui ne sait pas qu'il a lancé une requête trop lente.
+    slow = "WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r) SELECT COUNT(*) FROM r"
+    res = execute_sql(slow, db_path, timeout_s=0.2)
+    assert res.lignes is None
+    assert "délai" in res.erreur
+
+
+@pytest.mark.parametrize(
+    ("max_lignes", "n_attendu", "tronque_attendu"),
+    [
+        (2, 2, True),
+        (3, 3, False),  # exactement max_lignes lignes : rien n'a été coupé
+        (10, 3, False),
+        (None, 3, False),  # pas de limite (cas de l'évaluation)
+    ],
+)
+def test_execute_sql_troncature(db_path, max_lignes, n_attendu, tronque_attendu):
+    res = execute_sql("SELECT * FROM clients", db_path, max_lignes=max_lignes)
+    assert len(res.lignes) == n_attendu
+    assert res.tronque is tronque_attendu
 
 
 def test_results_match():
@@ -207,18 +232,18 @@ def test_load_shots(tmp_path):
 
 def test_evaluate_perfect_and_broken_backend(db_path):
     schema = get_schema(db_path)
-    perfect = FakeBackend(["```sql\n" + ex["sql"] + "\n```" for ex in EXAMPLES])
+    perfect = FauxBackend(["```sql\n" + ex["sql"] + "\n```" for ex in EXAMPLES])
     df = evaluate(perfect, EXAMPLES, schema, db_path=db_path)
     assert df["correct"].all() and df["valide"].all() and df["correct_relache"].all()
 
-    broken = FakeBackend(["SELECT n_importe_quoi FROM nulle_part;", "SELECT COUNT(*) FROM clients;"])
+    broken = FauxBackend(["SELECT n_importe_quoi FROM nulle_part;", "SELECT COUNT(*) FROM clients;"])
     df = evaluate(broken, EXAMPLES, schema, db_path=db_path)
     assert list(df["valide"]) == [False, True]
     assert list(df["correct"]) == [False, False]
     assert list(df["correct_relache"]) == [False, False]
 
     # Bonne réponse + une colonne en trop : fausse en strict, juste en relâché.
-    extra = FakeBackend([
+    extra = FauxBackend([
         "SELECT COUNT(*), 0 FROM clients;",
         "SELECT region, COUNT(*) FROM clients GROUP BY region ORDER BY region;",
     ])

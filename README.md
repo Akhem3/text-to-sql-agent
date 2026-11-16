@@ -1,6 +1,6 @@
 # Agent Text-to-SQL
 
-Agent qui traduit des questions métier en français en requêtes SQL sur une base SQLite, avec injection dynamique du schéma et boucle d'auto-correction. Le projet comprend aussi un benchmark maison et un fine-tuning QLoRA de Llama 3.1 8B, entraîné sur un Mac. *Projet personnel en cours : la mise en production reste à faire.*
+Agent qui traduit des questions métier en français en requêtes SQL sur une base SQLite, avec injection dynamique du schéma et boucle d'auto-correction. Le projet comprend aussi un benchmark maison et un fine-tuning QLoRA de Llama 3.1 8B, entraîné sur un Mac. *Projet personnel en cours : l'interface reste à faire.*
 
 ## Résultat principal
 
@@ -29,73 +29,30 @@ flowchart LR
     E -- succès --> O[Résultat]
 ```
 
-**L'agent et le benchmark sont pour l'instant séparés.** L'agent utilise encore le modèle de base 16 bits, sans l'adaptateur. Le benchmark mesure une seule génération, sans boucle de correction : les scores ci-dessus ne décrivent donc pas l'agent complet.
+## Limites
 
-## Exemple
+**La boucle de correction ne rattrape que les requêtes qui échouent.** Elle se déclenche sur une erreur SQLite, avec 3 tentatives au maximum. Une requête qui s'exécute mais renvoie une mauvaise réponse passe sans relance : sans requête de référence, l'agent n'a aucun moyen de savoir que le résultat est faux.
 
-Exemple produit par l'agent avec le modèle de base.
+Sur la validation, avec le modèle servi (GGUF Q4_K_M), 57 questions sur 100 échouent en une seule génération : 6 sur une erreur SQLite, que la boucle peut relancer, et 51 sur une requête valide mais fausse, qu'elle ne voit pas. Le gain était donc plafonné à +6 points. Mesuré sur l'agent complet :
 
-**Question :** « Quels sont les 3 clients avec les plus gros montants d'abonnements au sein de chaque région ? »
-
-**Requête SQL générée :**
-
-```sql
-WITH Ranked AS (
-    SELECT T3.region, T1.client_id,
-           SUM(T1.prix_mensuel) AS total_abonnement,
-           ROW_NUMBER() OVER (PARTITION BY T3.region
-                              ORDER BY SUM(T1.prix_mensuel) DESC) AS rn
-    FROM abonnements T1
-    JOIN clients T2 ON T1.client_id = T2.client_id
-    JOIN clients T3 ON T1.client_id = T3.client_id
-    GROUP BY T3.region, T1.client_id
-)
-SELECT T2.nom_entreprise, T3.region, T1.total_abonnement
-FROM Ranked T1
-JOIN clients T2 ON T1.client_id = T2.client_id
-JOIN clients T3 ON T1.client_id = T3.client_id
-WHERE T1.rn <= 3;
-```
-
-**Résultat (extrait) :**
-
-| Région | Client | Montant d'abonnement |
+| Validation (100 questions) | Tentative 1 | Agent (3 tentatives max.) |
 |---|---|---|
-| Alsace | Fabre | 552,20 € |
-| Alsace | Martin | 551,47 € |
-| Alsace | Joly | 493,31 € |
-| Aquitaine | Le Goff SARL | 581,67 € |
-| Aquitaine | Wagner | 526,41 € |
-| Aquitaine | Bailly S.A. | 508,53 € |
+| SQL valide | 94 % | 97 % |
+| Execution accuracy | 43 % | **44 %** |
+| Latence moyenne | 3,1 s | 4,2 s |
 
-*Base de démonstration avec des données fictives.*
+*La tentative 1 reproduit à l'identique les 100 requêtes du run `evaluate.py` du même GGUF : à température 0, llama-server est déterministe, et les deux colonnes se comparent directement.*
 
-## Exemple d'auto-correction
+**La boucle rattrape 1 question sur 6.** Sur les 6 relancées, 3 deviennent valides, mais une seule devient juste. Les relances ont deux défauts :
 
-**Tentative 1** : l'agent génère une requête qui échoue :
+- **Le modèle corrige le mauvais côté de l'erreur.** Face à `no such column: count_abos`, il renomme la colonne qu'il appelle (`count_abos`, puis `count`, puis `abo_count`) au lieu d'ajouter le `AS count_abos` qui manque dans la sous-requête. Il n'y a aucune répétition exacte sur les 10 relances, mais la plupart sont des retouches cosmétiques qui reproduisent la même erreur.
+- **Une erreur bruyante peut devenir silencieuse.** Pour corriger `AVG(SUM(...))`, que SQLite refuse, le modèle a supprimé le `SUM` : la requête s'exécute, mais elle calcule autre chose. C'est le pire cas, car l'utilisateur ne voit plus d'erreur.
 
-```sql
-WITH Ranked AS (
-    SELECT region, client_id,
-           SUM(prix_mensuel) AS total_abonnement,
-           ROW_NUMBER() OVER (PARTITION BY region
-                              ORDER BY SUM(prix_mensuel) DESC) AS rn
-    FROM abonnements
-    GROUP BY region, client_id
-)
-SELECT nom_entreprise, region, total_abonnement
-FROM Ranked
-JOIN clients ON Ranked.client_id = clients.client_id
-WHERE rn <= 3;
-```
+5 des 6 erreurs ont la même structure : un agrégat appliqué à un agrégat calculé par groupe (`AVG(COUNT(...))`, `AVG(SUM(...))`, `MAX` d'une somme mensuelle), ce qui demande une sous-requête ou une CTE avec un alias. Le message de SQLite dit ce qui ne va pas, pas comment restructurer la requête. Des indices ciblés dans le message de correction viseraient ce cas, mais les concevoir sur ces 6 questions puis les mesurer dessus reviendrait à surapprendre la validation.
 
-**Erreur SQLite renvoyée à l'agent :**
+**Pas de relance sur un résultat vide.** C'est un choix délibéré : « aucun client ne correspond » est souvent la bonne réponse, et une relance pousserait le modèle à inventer un filtre pour renvoyer quelque chose.
 
-```
-sqlite3.OperationalError: no such column: region
-```
-
-**Tentative 2** : la colonne `region` appartient à la table `clients`, pas à `abonnements`. L'agent corrige en ajoutant la jointure nécessaire, et la requête s'exécute avec succès (voir la requête de l'exemple ci-dessus).
+**Piste non explorée : la self-consistency.** Elle consiste à générer plusieurs requêtes, les exécuter, puis garder le résultat majoritaire. Elle pourrait attaquer une partie des requêtes valides mais fausses, au prix d'une latence multipliée par le nombre de générations sur chaque question.
 
 ## Installation
 
@@ -123,11 +80,83 @@ Pour vérifier l'installation :
 uv run pytest
 ```
 
-Pour lancer l'agent sur sa question d'exemple :
+## Lancer l'agent avec llama-server
+
+L'agent de production (`src/serving/agent.py`) interroge le modèle fine-tuné, quantifié en GGUF Q4_K_M, via [llama-server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server). Il faut deux terminaux.
+
+Terminal 1, le serveur (depuis la racine du repo) :
 
 ```bash
-uv run python src/text2sql/agent.py
+~/tools/llama.cpp/build/bin/llama-server -m models/gguf/llama31-lora-v1-iter440-Q4_K_M.gguf \
+    -ngl 99 -c 4096 --port 8080 --chat-template-kwargs '{"date_string": "26 Jul 2024"}'
 ```
+
+- `-ngl 99` : toutes les couches sur le GPU (Metal sur Mac).
+- `-c 4096` : contexte assez large pour le schéma de la base, inclus dans chaque prompt.
+- `--chat-template-kwargs` : **obligatoire**. Le template de Llama 3.1 écrit une ligne `Today Date:` dans le prompt système. HF y laisse `26 Jul 2024`, la date vue à l'entraînement et à l'évaluation, alors que llama-server y met la date du jour. Sans cette option, le prompt diffère de celui qui a été mesuré, sans qu'aucune erreur ne le signale (détecté par `tests/test_llm_server_integration.py`).
+
+Terminal 2, une fois `listening on http://127.0.0.1:8080` affiché :
+
+```bash
+uv run python -m src.serving.agent "Quel est le solde moyen des comptes courants ?"
+```
+
+Options : `--url` (défaut : la variable d'environnement `LLAMA_SERVER_URL`, sinon `http://localhost:8080`), `--max-tentatives` (défaut 3), `--max-lignes` (défaut 20).
+
+## Lancer l'agent avec Docker
+
+L'agent est empaqueté dans une image Docker (`Dockerfile`, environ 350 Mo) qui ne contient que Python 3.13 et les dépendances de l'agent, sans torch ni MLX. Le modèle peut tourner à deux endroits :
+
+| Mode | llama-server | Fichiers Compose | Usage |
+|---|---|---|---|
+| Hybride | natif sur l'hôte, GPU Metal | `compose.yaml` | sur un Mac, pour la vitesse du GPU |
+| CPU | en conteneur, image officielle | `compose.yaml` + `compose.cpu.yaml` | sur toute machine avec Docker, sans GPU |
+
+Docker ne donne pas accès au GPU Metal du Mac : un llama-server en conteneur tourne donc sur CPU, d'où le mode hybride.
+
+Prérequis : Docker ([Docker Desktop](https://docs.docker.com/desktop/) sur Mac), la base `data/raw/banque_entreprise.db` (voir [Installation](#installation)) et le GGUF dans `models/gguf/`. La base et les poids ne sont pas copiés dans les images : ils sont montés en lecture seule au lancement.
+
+### Mode hybride
+
+Lancez llama-server comme dans la section précédente, puis :
+
+```bash
+docker compose run --rm agent "Quel est le solde moyen des comptes courants ?"
+```
+
+Dans un conteneur, `localhost` désigne le conteneur lui-même : l'agent joint le serveur de l'hôte via `host.docker.internal`. Sous Docker Desktop, un llama-server qui n'écoute que sur `127.0.0.1` reste joignable de cette façon. Sous Linux (non testé), `host.docker.internal` pointe vers l'interface du réseau Docker, et non vers `127.0.0.1` : llama-server doit alors écouter sur cette interface.
+
+### Mode CPU
+
+```bash
+docker compose -f compose.yaml -f compose.cpu.yaml run --rm agent "Quel est le solde moyen des comptes courants ?"
+
+# --rm ne supprime que le conteneur de l'agent : llama-server continue de tourner (~5 Go de RAM)
+docker compose -f compose.yaml -f compose.cpu.yaml down
+```
+
+`compose.cpu.yaml` complète `compose.yaml` : il ajoute un service llama-server et fait pointer l'agent vers lui. L'agent ne démarre qu'une fois le modèle chargé, grâce au healthcheck sur `/health`. La date du template est fixée comme en natif.
+
+L'image de llama-server est épinglée sur le build `server-b12110`, qui correspond au même commit que la version native (v0.9.0). Sur les 3 premières questions de validation, l'agent produit les mêmes requêtes qu'en mode Metal. Ce n'est pas garanti en général : le CPU et le GPU n'arrondissent pas les calculs de la même façon, et à température 0 un écart minime peut changer un token.
+
+### Latence
+
+Ordres de grandeur mesurés sur un Mac M5 (10 cœurs alloués à Docker) avec 3 questions de validation, en comptant toute la commande, création du conteneur comprise :
+
+| | Natif (Metal) | Hybride | CPU |
+|---|---|---|---|
+| Lecture du prompt | 449 tokens/s | 449 tokens/s | 60 tokens/s |
+| Génération | 26 tokens/s | 26 tokens/s | 18 tokens/s |
+| 1re question après démarrage | ~1,8 s | ~6 s | 15,5 s |
+| Questions suivantes | ~1,8 s | ~2,3 s | 3,4 à 3,8 s |
+
+Sur CPU, le coût vient surtout de la lecture du prompt. Chaque prompt compte environ 700 tokens, dont le schéma de la base, et la première lecture prend 12 s. llama-server garde ensuite en cache le calcul du début commun à toutes les questions (prompt système et schéma) et ne lit plus que la vingtaine de tokens de la question. Cela ne marche que parce que la question est placée à la fin du prompt : le cache s'arrête au premier token qui diffère.
+
+### Notes de déploiement
+
+- **Serveur x86** : une image construite sur un Mac Apple Silicon est en arm64. Pour un serveur x86, construisez avec `docker build --platform linux/amd64 -t text2sql-agent .`. L'image llama-server existe pour les deux architectures.
+- **Sécurité** : llama-server n'a ni clé API ni restriction CORS. En mode hybride, il n'écoute que sur `127.0.0.1`. En mode CPU, son port n'est pas publié sur l'hôte : seul l'agent le joint, par le réseau interne de Compose. Pour l'exposer, il faudrait au minimum `--api-key`.
+- **Amélioration possible** : un build en plusieurs étapes (multi-stage) allégerait l'image de l'agent en laissant uv et les fichiers de build hors de l'image finale.
 
 ## Évaluation
 
@@ -234,6 +263,12 @@ Lancer un benchmark :
 uv run python -m src.text2sql.evaluate --split validation --shots 0 --name mon_run
 ```
 
+Évaluer l'agent complet, boucle de correction comprise (llama-server lancé, voir [Lancer l'agent](#lancer-lagent-avec-llama-server)) :
+
+```bash
+uv run python -m src.serving.evaluate_agent --split validation --name mon_run
+```
+
 Rejouer un run de l'ablation, puis recalculer l'analyse à partir de `results/` :
 
 ```bash
@@ -280,16 +315,15 @@ uv run python -m src.text2sql.analyse_finetuning
 
 ## Avancement
 
-- [x] Agent LangChain/LCEL (Llama 3.1 8B)
 - [x] Injection dynamique du schéma
-- [x] Boucle d'auto-correction
 - [x] Évaluation (execution accuracy, benchmark de 691 questions)
 - [x] Prompt few-shot et ablation sur le style des colonnes
 - [x] Fine-tuning QLoRA
-- [ ] Brancher le modèle fine-tuné dans l'agent
-- [ ] Mise en production (llama.cpp, Docker)
+- [x] Agent LangGraph avec boucle de correction, sur le modèle fine-tuné servi par llama.cpp
+- [x] Évaluation de l'agent complet
+- [x] Mise en production (llama.cpp, Docker)
 - [ ] Interface
 
 ## Stack
 
-Python · Llama 3.1 8B · MLX (mlx-lm) · LangChain (LCEL) · SQLite · uv
+Python · Llama 3.1 8B · MLX (mlx-lm) · llama.cpp · LangGraph · SQLite · uv · Docker
