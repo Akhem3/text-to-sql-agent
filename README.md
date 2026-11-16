@@ -327,3 +327,9 @@ uv run python -m src.text2sql.analyse_finetuning
 ## Stack
 
 Python · Llama 3.1 8B · MLX (mlx-lm) · llama.cpp · LangGraph · SQLite · uv · Docker
+
+## Licence
+
+Le code et les données de ce dépôt sont sous licence [MIT](LICENSE). Les données sont synthétiques : la base et les questions du benchmark ont été générées pour le projet et ne contiennent aucune donnée réelle.
+
+Les poids du modèle (adaptateur LoRA et GGUF) ne sont pas dans ce dépôt et ne relèvent pas de la licence MIT. Ils dérivent de Llama 3.1 8B Instruct et restent soumis à la [Llama 3.1 Community License](https://www.llama.com/llama3_1/license/) de Meta. Built with Llama.
