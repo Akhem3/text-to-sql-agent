@@ -4,6 +4,8 @@
 
 Agent qui traduit des questions métier en français en requêtes SQL sur une base SQLite, avec injection dynamique du schéma et boucle d'auto-correction. Le projet comprend aussi un benchmark maison et un fine-tuning QLoRA de Llama 3.1 8B, entraîné sur un Mac. *Projet personnel en cours : l'interface reste à faire.*
 
+Modèles publiés sur Hugging Face : [GGUF pour llama.cpp](https://huggingface.co/akhe-m/Llama-3.1-8B-Text2SQL-Banque-FR-GGUF) et [adaptateur LoRA pour MLX](https://huggingface.co/akhe-m/Llama-3.1-8B-Text2SQL-Banque-FR-LoRA-MLX).
+
 ## Résultat principal
 
 Sur les 100 questions du split de test, utilisé une seule fois après tous les choix :
@@ -64,12 +66,6 @@ Le projet demande Python 3.13 et [uv](https://docs.astral.sh/uv/getting-started/
 uv sync
 ```
 
-Les poids de Llama 3.1 sont soumis à une licence : acceptez-la sur la [page du modèle](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct), puis connectez-vous à Hugging Face :
-
-```bash
-uv run hf auth login
-```
-
 La base SQLite (`data/raw/banque_entreprise.db`, 8 Mo de données synthétiques) et les questions du benchmark sont versionnées dans `data/raw/` : c'est la base de toutes les mesures de ce README. Le notebook [`01_generation_bdd.ipynb`](notebooks/01_generation_bdd.ipynb) montre comment elle a été générée ; le relancer l'écrase. Le dataset (splits train, validation et test) n'est pas versionné. Pour le générer :
 
 ```bash
@@ -82,25 +78,39 @@ Pour vérifier l'installation :
 uv run pytest
 ```
 
+Refaire l'entraînement ou les évaluations sur le modèle de base demande en plus d'accepter la licence de Llama 3.1 sur la [page du modèle](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct), puis de se connecter (`uv run hf auth login`). Ce n'est pas nécessaire pour lancer l'agent.
+
+## Obtenir le modèle
+
+Le modèle servi est publié sur Hugging Face : un GGUF Q4_K_M de 4,9 Go, à placer dans `models/gguf/`, où les commandes ci-dessous et Docker l'attendent.
+
+```bash
+uv run hf download akhe-m/Llama-3.1-8B-Text2SQL-Banque-FR-GGUF \
+    llama31-lora-v1-iter440-Q4_K_M.gguf --local-dir models/gguf
+```
+
+Son empreinte SHA-256 est indiquée sur la [page du modèle](https://huggingface.co/akhe-m/Llama-3.1-8B-Text2SQL-Banque-FR-GGUF). L'adaptateur LoRA, qui a obtenu les 42 % du test avec MLX, est publié [à part](https://huggingface.co/akhe-m/Llama-3.1-8B-Text2SQL-Banque-FR-LoRA-MLX). Pour reconstruire le GGUF à partir de l'adaptateur, voir [Reproduire](#reproduire).
+
 ## Lancer l'agent avec llama-server
 
-L'agent de production (`src/serving/agent.py`) interroge le modèle fine-tuné, quantifié en GGUF Q4_K_M, via [llama-server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server). Il faut deux terminaux.
+L'agent de production (`src/serving/agent.py`) interroge le modèle fine-tuné, quantifié en GGUF Q4_K_M, via [llama-server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server). Les mesures de ce README utilisent llama.cpp `v0.9.0` (build `b12110`), [compilé depuis les sources](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md). Il faut deux terminaux.
 
 Terminal 1, le serveur (depuis la racine du repo) :
 
 ```bash
-~/tools/llama.cpp/build/bin/llama-server -m models/gguf/llama31-lora-v1-iter440-Q4_K_M.gguf \
+llama-server -m models/gguf/llama31-lora-v1-iter440-Q4_K_M.gguf \
     -ngl 99 -c 4096 --port 8080 --chat-template-kwargs '{"date_string": "26 Jul 2024"}'
 ```
 
 - `-ngl 99` : toutes les couches sur le GPU (Metal sur Mac).
 - `-c 4096` : contexte assez large pour le schéma de la base, inclus dans chaque prompt.
+- `--port 8080` : le port qu'attend l'agent. Le port par défaut de llama-server change selon les versions (9931 avec `b12110`).
 - `--chat-template-kwargs` : **obligatoire**. Le template de Llama 3.1 écrit une ligne `Today Date:` dans le prompt système. HF y laisse `26 Jul 2024`, la date vue à l'entraînement et à l'évaluation, alors que llama-server y met la date du jour. Sans cette option, le prompt diffère de celui qui a été mesuré, sans qu'aucune erreur ne le signale (détecté par `tests/test_llm_server_integration.py`).
 
 Terminal 2, une fois `listening on http://127.0.0.1:8080` affiché :
 
 ```bash
-uv run python -m src.serving.agent "Quel est le solde moyen des comptes courants ?"
+uv run python -m src.serving.agent "Quel est le prix mensuel moyen des forfaits actifs par type de forfait ?"
 ```
 
 Options : `--url` (défaut : la variable d'environnement `LLAMA_SERVER_URL`, sinon `http://localhost:8080`), `--max-tentatives` (défaut 3), `--max-lignes` (défaut 20).
@@ -116,14 +126,14 @@ L'agent est empaqueté dans une image Docker (`Dockerfile`, environ 350 Mo) qui 
 
 Docker ne donne pas accès au GPU Metal du Mac : un llama-server en conteneur tourne donc sur CPU, d'où le mode hybride.
 
-Prérequis : Docker ([Docker Desktop](https://docs.docker.com/desktop/) sur Mac), la base `data/raw/banque_entreprise.db` (voir [Installation](#installation)) et le GGUF dans `models/gguf/`. La base et les poids ne sont pas copiés dans les images : ils sont montés en lecture seule au lancement.
+Prérequis : Docker ([Docker Desktop](https://docs.docker.com/desktop/) sur Mac), la base `data/raw/banque_entreprise.db`, versionnée, et le GGUF dans `models/gguf/` (voir [Obtenir le modèle](#obtenir-le-modèle)). La base et les poids ne sont pas copiés dans les images : ils sont montés en lecture seule au lancement.
 
 ### Mode hybride
 
 Lancez llama-server comme dans la section précédente, puis :
 
 ```bash
-docker compose run --rm agent "Quel est le solde moyen des comptes courants ?"
+docker compose run --rm agent "Quel est le prix mensuel moyen des forfaits actifs par type de forfait ?"
 ```
 
 Dans un conteneur, `localhost` désigne le conteneur lui-même : l'agent joint le serveur de l'hôte via `host.docker.internal`. Sous Docker Desktop, un llama-server qui n'écoute que sur `127.0.0.1` reste joignable de cette façon. Sous Linux (non testé), `host.docker.internal` pointe vers l'interface du réseau Docker, et non vers `127.0.0.1` : llama-server doit alors écouter sur cette interface.
@@ -131,7 +141,7 @@ Dans un conteneur, `localhost` désigne le conteneur lui-même : l'agent joint l
 ### Mode CPU
 
 ```bash
-docker compose -f compose.yaml -f compose.cpu.yaml run --rm agent "Quel est le solde moyen des comptes courants ?"
+docker compose -f compose.yaml -f compose.cpu.yaml run --rm agent "Quel est le prix mensuel moyen des forfaits actifs par type de forfait ?"
 
 # --rm ne supprime que le conteneur de l'agent : llama-server continue de tourner (~5 Go de RAM)
 docker compose -f compose.yaml -f compose.cpu.yaml down
@@ -254,7 +264,7 @@ Le gain vient surtout du choix des colonnes : à bon nombre de colonnes, le taux
 
 - Le test ne compte que 100 questions, et le score par famille n'y repose que sur 7 à 9 questions.
 - Le benchmark est maison, et les colonnes attendues sont en partie arbitraires : l'EX ne dit pas à elle seule si le modèle raisonne mieux en SQL.
-- Le modèle fine-tuné n'a pas été évalué avec la boucle de correction de l'agent.
+- La boucle de correction de l'agent n'a été mesurée que sur la validation, avec le GGUF (voir [Limites](#limites)) : le test n'a servi qu'au modèle seul.
 - Le split de test étant consommé, tout nouveau modèle demandera un nouveau jeu de test.
 
 ### Reproduire
@@ -281,7 +291,7 @@ uv run python -m src.text2sql.analyse_ablation
 Refaire le fine-tuning (Apple Silicon requis, environ 80 min pour les 660 itérations) :
 
 ```bash
-# Quantifier le modèle, puis exporter le train au format de mlx-lm
+# Quantifier le modèle (révision utilisée : 0e9e39f), puis exporter le train au format de mlx-lm
 uv run mlx_lm.convert --hf-path meta-llama/Llama-3.1-8B-Instruct --mlx-path models/llama31-8b-4bit -q --q-bits 4
 uv run python -m src.finetuning.export_mlx
 
@@ -309,6 +319,49 @@ uv run python -m src.text2sql.evaluate --backend mlx \
   --split validation --name mon_run
 ```
 
+Évaluer l'adaptateur publié sans réentraîner (Apple Silicon requis) :
+
+```bash
+# Le modèle 4 bits sur lequel l'adaptateur a été entraîné (à sauter s'il existe déjà)
+uv run mlx_lm.convert --hf-path meta-llama/Llama-3.1-8B-Instruct --mlx-path models/llama31-8b-4bit -q --q-bits 4
+
+uv run hf download akhe-m/Llama-3.1-8B-Text2SQL-Banque-FR-LoRA-MLX \
+  --local-dir models/adapters/llama31-4bit-lora-v1-iter440
+
+uv run python -m src.text2sql.evaluate --backend mlx \
+  --model models/llama31-8b-4bit \
+  --adapter models/adapters/llama31-4bit-lora-v1-iter440 \
+  --split validation --name mon_run
+```
+
+Construire le GGUF à partir de l'adaptateur. La fusion se fait dans les poids **16 bits** du modèle de base, et non dans le modèle 4 bits de l'entraînement, pour n'avoir qu'une seule quantification :
+
+```bash
+# Modèle de base 16 bits, à la révision utilisée, et adaptateur (entraîné ou téléchargé)
+A=models/adapters/llama31-4bit-lora-v1
+B=models/llama31-8b-instruct
+uv run hf download meta-llama/Llama-3.1-8B-Instruct --revision 0e9e39f249a16976918f6564b8830bc894c89659 \
+  --local-dir $B --exclude "original/*"
+
+# Fusionner l'adaptateur. mlx-lm réécrit le tokenizer dans un format que la conversion ne lit pas :
+# on remet les fichiers d'origine, et le template reste celui de tokenizer_config.json.
+F=models/llama31-lora-v1-iter440-fused-16b
+uv run mlx_lm.fuse --model $B --adapter-path $A-iter440 --save-path $F
+cp $B/tokenizer.json $B/tokenizer_config.json $B/special_tokens_map.json $F/
+rm -f $F/chat_template.jinja
+
+# Contrôler la fusion : chaque matrice ciblée doit valoir W + scale·B·A, les autres rester identiques
+uv run python -m src.finetuning.verifier_fusion --base $B --fusionne $F --adaptateur $A-iter440
+
+# Convertir en GGUF bf16, puis quantifier en Q4_K_M (llama.cpp v0.9.0). La conversion se lance dans un
+# environnement séparé, avec les dépendances de llama.cpp (requirements/requirements-convert_hf_to_gguf.txt).
+python convert_hf_to_gguf.py $F --outtype bf16 --outfile models/gguf/llama31-lora-v1-iter440-bf16.gguf
+llama-quantize models/gguf/llama31-lora-v1-iter440-bf16.gguf \
+  models/gguf/llama31-lora-v1-iter440-Q4_K_M.gguf Q4_K_M
+```
+
+Les fichiers intermédiaires (modèle fusionné et GGUF bf16) font environ 15 Go chacun : supprimez-les une fois le GGUF Q4_K_M obtenu.
+
 Recalculer les chiffres du fine-tuning et du test à partir de `results/`, sans relancer de modèle :
 
 ```bash
@@ -324,14 +377,16 @@ uv run python -m src.text2sql.analyse_finetuning
 - [x] Agent LangGraph avec boucle de correction, sur le modèle fine-tuné servi par llama.cpp
 - [x] Évaluation de l'agent complet
 - [x] Mise en production (llama.cpp, Docker)
+- [x] Intégration continue (lint et tests à chaque push)
+- [x] Publication du GGUF et de l'adaptateur sur Hugging Face
 - [ ] Interface
 
 ## Stack
 
-Python · Llama 3.1 8B · MLX (mlx-lm) · llama.cpp · LangGraph · SQLite · uv · Docker
+Python · Llama 3.1 8B · MLX (mlx-lm) · llama.cpp · LangGraph · SQLite · uv · Docker · GitHub Actions · Hugging Face Hub
 
 ## Licence
 
-Le code et les données de ce dépôt sont sous licence [MIT](LICENSE). Les données sont synthétiques : la base et les questions du benchmark ont été générées pour le projet et ne contiennent aucune donnée réelle.
+Le code et les données de ce dépôt sont sous licence [MIT](LICENSE). Les données sont synthétiques : la base a été générée avec Faker et les questions du benchmark par IA. Elles ne contiennent aucune donnée réelle.
 
-Les poids du modèle (adaptateur LoRA et GGUF) ne sont pas dans ce dépôt et ne relèvent pas de la licence MIT. Ils dérivent de Llama 3.1 8B Instruct et restent soumis à la [Llama 3.1 Community License](https://www.llama.com/llama3_1/license/) de Meta. Built with Llama.
+Les poids du modèle (adaptateur LoRA et GGUF) ne sont pas dans ce dépôt et ne relèvent pas de la licence MIT. Publiés sur Hugging Face, ils dérivent de Llama 3.1 8B Instruct et restent soumis à la [Llama 3.1 Community License](https://dev.meta.ai/llama/llama3_1/license) de Meta. Built with Llama.
