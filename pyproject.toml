@@ -36,13 +36,18 @@ dev = [
     "ipykernel (>=7.4.0,<8.0.0)",
     "ipywidgets (>=8.1.9,<9.0.0)"
 ]
+# L'interface web (Gradio, qui apporte FastAPI et uvicorn) : ni l'image de l'agent ni la CI n'en ont besoin.
+# 6.32.0 écartée : sortie depuis moins de deux semaines au moment de l'ajout.
+ui = [
+    "gradio>=6.31.0,<6.32.0",
+]
 
 # Le code tourne depuis la racine (`python -m src.text2sql...`) sans être installé :
 # uv ne doit donc pas construire le projet, et aucun [build-system] n'est nécessaire.
 [tool.uv]
 package = false
 # En local, `uv sync` installe tout, comme avant la séparation ; l'image s'en passe avec --no-default-groups.
-default-groups = ["dev", "eval", "ml"]
+default-groups = ["dev", "eval", "ml", "ui"]
 
 # Rend `from src...` importable quelle que soit la commande (`pytest` seul n'ajoute que tests/).
 [tool.pytest.ini_options]
