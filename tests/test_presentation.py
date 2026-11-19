@@ -75,11 +75,15 @@ def test_markdown_montre_le_sql_et_l_erreur():
     assert "**Tentative 1**" in md and "**Tentative 2**" in md
     assert f"```sql\n{FAUX_SQL}\n```" in md
     assert f"```sql\n{BON_SQL}\n```" in md
-    assert "Erreur : `no such column: nom`" in md
+    assert "❌ Erreur : `no such column: nom`" in md
+    # La tentative retenue est marquée : sans cela, une correction réussie se lisait comme un échec.
+    assert md.endswith("✅ Exécutée sans erreur")
 
 
 def test_markdown_pas_d_erreur_sur_une_reussite():
-    assert "Erreur" not in tentatives_en_markdown([_reussie([(3,)])])
+    md = tentatives_en_markdown([_reussie([(3,)])])
+    assert "❌" not in md
+    assert "✅ Exécutée sans erreur" in md
 
 
 # --- resumer --------------------------------------------------------------------
@@ -88,11 +92,14 @@ def test_markdown_pas_d_erreur_sur_une_reussite():
 @pytest.mark.parametrize(
     ("tentatives", "attendu"),
     [
-        ([_reussie([(3,)])], "Réussi du premier coup · 1 ligne"),
-        ([_reussie([(1,), (2,)])], "Réussi du premier coup · 2 lignes"),
-        ([_reussie([])], "Réussi du premier coup · aucune ligne"),
-        ([_ratee(), _reussie([(3,)])], "Corrigé à la tentative 2 · 1 ligne"),
-        ([_reussie([(1,), (2,)], tronque=True)], "Réussi du premier coup · 2 premières lignes (résultat tronqué)"),
+        ([_reussie([(3,)])], "Exécutée du premier coup · 1 ligne"),
+        ([_reussie([(1,), (2,)])], "Exécutée du premier coup · 2 lignes"),
+        (
+            [_reussie([])],
+            "Exécutée du premier coup · aucune ligne : la question sort peut-être du périmètre de la base",
+        ),
+        ([_ratee(), _reussie([(3,)])], "Exécutée après correction (tentative 2) · 1 ligne"),
+        ([_reussie([(1,), (2,)], tronque=True)], "Exécutée du premier coup · 2 premières lignes (résultat tronqué)"),
         ([_ratee()], "Échec après 1 tentative"),
         ([_ratee()] * 3, "Échec après 3 tentatives"),
     ],

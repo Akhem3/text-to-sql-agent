@@ -30,7 +30,10 @@ def tentatives_en_markdown(tentatives: Sequence[Tentative]) -> str:
         section = f"**Tentative {i}**\n\n```sql\n{tentative.sql}\n```"
         if tentative.resultat.erreur is not None:
             # En code : un message SQLite contient des guillemets et des * que Markdown interpréterait.
-            section += f"\n\nErreur : `{tentative.resultat.erreur}`"
+            section += f"\n\n❌ Erreur : `{tentative.resultat.erreur}`"
+        else:
+            # Sans marqueur, seules les tentatives ratées attirent l'œil : une correction réussie passait pour un échec.
+            section += "\n\n✅ Exécutée sans erreur"
         sections.append(section)
     return "\n\n".join(sections)
 
@@ -42,13 +45,15 @@ def resumer(tentatives: Sequence[Tentative]) -> str:
     if final.erreur is not None:
         return f"Échec après {n} tentative{'s' if n > 1 else ''}"
 
-    issue = "Réussi du premier coup" if n == 1 else f"Corrigé à la tentative {n}"
+    # « Exécutée », pas « Réussie » : on sait que SQLite a accepté la requête, pas qu'elle répond à la question.
+    issue = "Exécutée du premier coup" if n == 1 else f"Exécutée après correction (tentative {n})"
     nb_lignes = len(final.lignes)
     if final.tronque:
         # Le vrai total est inconnu : execute_sql s'arrête dès max_lignes + 1 lignes lues.
         lignes = f"{nb_lignes} premières lignes (résultat tronqué)"
     elif nb_lignes == 0:
-        lignes = "aucune ligne"
+        # Le modèle n'a jamais appris à refuser : une question hors sujet donne du SQL valide qui ne trouve rien.
+        lignes = "aucune ligne : la question sort peut-être du périmètre de la base"
     else:
         lignes = f"{nb_lignes} ligne{'s' if nb_lignes > 1 else ''}"
     return f"{issue} · {lignes}"
