@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Akhem3/text-to-sql-agent/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Akhem3/text-to-sql-agent/actions/workflows/ci.yml)
 
-Agent qui traduit des questions métier en français en requêtes SQL sur une base SQLite, avec injection dynamique du schéma et boucle d'auto-correction. Le projet comprend aussi un benchmark maison et un fine-tuning QLoRA de Llama 3.1 8B, entraîné sur un Mac. *Projet personnel en cours : l'interface reste à faire.*
+Agent qui traduit des questions métier en français en requêtes SQL sur une base SQLite, avec injection dynamique du schéma et boucle d'auto-correction. Il est servi par une API REST (FastAPI) et une interface web (Gradio). Le projet comprend aussi un benchmark maison et un fine-tuning QLoRA de Llama 3.1 8B, entraîné sur un Mac.
 
 Modèles publiés sur Hugging Face : [GGUF pour llama.cpp](https://huggingface.co/akhe-m/Llama-3.1-8B-Text2SQL-Banque-FR-GGUF) et [adaptateur LoRA pour MLX](https://huggingface.co/akhe-m/Llama-3.1-8B-Text2SQL-Banque-FR-LoRA-MLX).
 
@@ -115,6 +115,63 @@ uv run python -m src.serving.agent "Quel est le prix mensuel moyen des forfaits 
 
 Options : `--url` (défaut : la variable d'environnement `LLAMA_SERVER_URL`, sinon `http://localhost:8080`), `--max-tentatives` (défaut 3), `--max-lignes` (défaut 20).
 
+## Interface web et API REST
+
+Le même agent est servi sur un seul serveur, avec deux portes d'entrée : une API REST (FastAPI) pour les programmes et une interface web (Gradio) pour les humains. llama-server doit tourner (voir la section précédente), puis :
+
+```bash
+uv run python -m src.serving.api
+```
+
+| Adresse | Rôle |
+|---|---|
+| http://127.0.0.1:8000/ui | Interface : la question, chaque tentative au fil de l'eau, le tableau de résultats |
+| http://127.0.0.1:8000/docs | Documentation de l'API, générée à partir des modèles Pydantic, avec un bouton pour l'essayer |
+| `POST /ask` | L'endpoint de l'API |
+
+Options : `--url` (comme pour l'agent), `--host` (défaut `127.0.0.1`), `--port` (défaut 8000), `--max-tentatives` (défaut 3), `--max-lignes` (défaut 100), `--sans-interface` (API seule, sans charger Gradio).
+
+![Interface web : la question, la tentative 1 en erreur, puis le résultat obtenu à la tentative 3](docs/images/interface.png)
+
+*Le dernier exemple de l'interface : les deux premières tentatives échouent (ici `ambiguous column name`), l'agent se corrige et la troisième s'exécute. L'interface rappelle qu'une requête exécutée sans erreur peut quand même être fausse.*
+
+### API
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/ask \
+    -H 'Content-Type: application/json' \
+    -d '{"question": "Combien de clients par région ?"}'
+```
+
+Réponse (raccourcie) :
+
+```json
+{
+  "statut": "executee",
+  "sql": "SELECT region, COUNT(*)\nFROM clients\nGROUP BY region;",
+  "tentatives": [{"sql": "SELECT region, COUNT(*)\nFROM clients\nGROUP BY region;", "erreur": null}],
+  "colonnes": ["region", "COUNT(*)"],
+  "lignes": [["Alsace", 174], ["Aquitaine", 155], "..."],
+  "tronque": false,
+  "duree_s": 0.67
+}
+```
+
+`tentatives` contient tout l'historique, avec l'erreur SQLite de chaque tentative ratée. `sql` est la requête de la dernière tentative, et `tronque` indique que le résultat a été coupé à `--max-lignes` lignes.
+
+| Code | Cas | Pourquoi ce code |
+|---|---|---|
+| 200, `statut: "executee"` | Une tentative s'exécute sans erreur | Cas nominal, après correction ou non |
+| 200, `statut: "echec"` | Les 3 tentatives échouent | La requête du client était valide et le service a répondu : « aucun SQL exécutable trouvé » est une réponse, pas une panne |
+| 422 | Question absente, vide ou faite d'espaces | Faute du client, détectée par Pydantic avant tout appel au modèle |
+| 503 | llama-server injoignable ou en erreur | Une dépendance est indisponible : le client peut réessayer plus tard |
+
+![Documentation de l'API générée par FastAPI : la requête curl et la réponse 200](docs/images/api-docs.png)
+
+L'endpoint est une fonction synchrone (`def`, pas `async def`) : l'agent fait des appels bloquants (HTTP vers llama-server, SQLite), et FastAPI exécute donc chaque requête dans un pool de threads, sans bloquer les autres. Ces cas sont testés sans serveur, avec le `TestClient` de FastAPI et un faux modèle (`tests/test_api.py`, lancés en CI).
+
+**Sécurité** : l'API n'a ni authentification ni limite de débit. Par défaut, elle n'écoute que sur `127.0.0.1` ; elle ne doit pas être exposée telle quelle sur un réseau public (`--host 0.0.0.0`).
+
 ## Lancer l'agent avec Docker
 
 L'agent est empaqueté dans une image Docker (`Dockerfile`, environ 350 Mo) qui ne contient que Python 3.13 et les dépendances de l'agent, sans torch ni MLX. Le modèle peut tourner à deux endroits :
@@ -168,6 +225,7 @@ Sur CPU, le coût vient surtout de la lecture du prompt. Chaque prompt compte en
 
 - **Serveur x86** : une image construite sur un Mac Apple Silicon est en arm64. Pour un serveur x86, construisez avec `docker build --platform linux/amd64 -t text2sql-agent .`. L'image llama-server existe pour les deux architectures.
 - **Sécurité** : llama-server n'a ni clé API ni restriction CORS. En mode hybride, il n'écoute que sur `127.0.0.1`. En mode CPU, son port n'est pas publié sur l'hôte : seul l'agent le joint, par le réseau interne de Compose. Pour l'exposer, il faudrait au minimum `--api-key`.
+- **API et interface** : l'image ne contient que l'agent en ligne de commande, sans les groupes `api` et `ui`. Servir l'API et l'interface en conteneur demanderait d'installer ces groupes, d'écouter sur `0.0.0.0` et de publier le port 8000.
 - **Amélioration possible** : un build en plusieurs étapes (multi-stage) allégerait l'image de l'agent en laissant uv et les fichiers de build hors de l'image finale.
 
 ## Évaluation
@@ -379,11 +437,11 @@ uv run python -m src.text2sql.analyse_finetuning
 - [x] Mise en production (llama.cpp, Docker)
 - [x] Intégration continue (lint et tests à chaque push)
 - [x] Publication du GGUF et de l'adaptateur sur Hugging Face
-- [ ] Interface
+- [x] API REST (FastAPI) et interface web (Gradio)
 
 ## Stack
 
-Python · Llama 3.1 8B · MLX (mlx-lm) · llama.cpp · LangGraph · SQLite · uv · Docker · GitHub Actions · Hugging Face Hub
+Python · Llama 3.1 8B · MLX (mlx-lm) · llama.cpp · LangGraph · FastAPI · Gradio · SQLite · uv · Docker · GitHub Actions · Hugging Face Hub
 
 ## Licence
 
