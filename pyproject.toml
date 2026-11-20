@@ -41,13 +41,23 @@ dev = [
 ui = [
     "gradio>=6.31.0,<6.32.0",
 ]
+# L'API REST de l'agent. Déclarée à part de Gradio, qui apporte aussi FastAPI : l'API ne doit pas dépendre
+# de ce que l'interface installe. Version exacte : tous les correctifs 0.162.x suivants étaient sortis
+# depuis moins de deux semaines à l'ajout.
+api = [
+    "fastapi==0.162.0",
+    "uvicorn>=0.54.0,<0.55",
+]
 
 # Le code tourne depuis la racine (`python -m src.text2sql...`) sans être installé :
 # uv ne doit donc pas construire le projet, et aucun [build-system] n'est nécessaire.
 [tool.uv]
 package = false
 # En local, `uv sync` installe tout, comme avant la séparation ; l'image s'en passe avec --no-default-groups.
-default-groups = ["dev", "eval", "ml", "ui"]
+default-groups = ["dev", "eval", "ml", "ui", "api"]
+# Borne une dépendance transitive (apportée par Gradio) sans la déclarer comme dépendance directe.
+# 0.0.34 était sortie depuis moins de deux semaines ; la contrainte peut être retirée ensuite.
+constraint-dependencies = ["python-multipart<0.0.34"]
 
 # Rend `from src...` importable quelle que soit la commande (`pytest` seul n'ajoute que tests/).
 [tool.pytest.ini_options]

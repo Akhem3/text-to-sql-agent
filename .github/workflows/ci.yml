@@ -28,9 +28,10 @@ jobs:
           enable-cache: true
 
       # Sans le groupe ml (torch, MLX : plusieurs Go) : la CI teste le code, pas les modèles.
+      # api : les tests de l'API REST tournent avec le TestClient de FastAPI, sans serveur.
       # --locked : échoue si uv.lock ne correspond plus à pyproject.toml.
       - name: Installer les dépendances
-        run: uv sync --locked --no-default-groups --group dev --group eval
+        run: uv sync --locked --no-default-groups --group dev --group eval --group api
 
       # --no-sync partout : un `uv run` simple resynchroniserait les groupes par défaut, donc ml.
       - name: Ruff (lint)
